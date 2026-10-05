@@ -1,42 +1,12 @@
 import mongoose from "mongoose";
 
-const orderItemSchema =
-  new mongoose.Schema(
-    {
-      product: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Product",
-        required: true,
-      },
-
-      name: {
-        type: String,
-        required: true,
-      },
-
-      price: {
-        type: Number,
-        required: true,
-        min: 0,
-      },
-
-      quantity: {
-        type: Number,
-        required: true,
-        min: 1,
-      },
-    },
-    {
-      _id: false,
-    }
-  );
-
 const orderSchema = new mongoose.Schema(
   {
     orderNumber: {
       type: String,
       required: true,
       unique: true,
+      trim: true,
     },
 
     customer: {
@@ -55,14 +25,36 @@ const orderSchema = new mongoose.Schema(
       email: {
         type: String,
         trim: true,
-        lowercase: true,
+        default: "",
       },
     },
 
-    items: {
-      type: [orderItemSchema],
-      required: true,
-    },
+    items: [
+      {
+        product: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Product",
+          required: true,
+        },
+
+        name: {
+          type: String,
+          required: true,
+        },
+
+        price: {
+          type: Number,
+          required: true,
+          min: 0,
+        },
+
+        quantity: {
+          type: Number,
+          required: true,
+          min: 1,
+        },
+      },
+    ],
 
     fulfillmentMethod: {
       type: String,
@@ -70,13 +62,24 @@ const orderSchema = new mongoose.Schema(
         "delivery",
         "pickup",
       ],
-      default: "delivery",
+      required: true,
     },
 
     deliveryAddress: {
-      address: String,
-      town: String,
-      landmark: String,
+      address: {
+        type: String,
+        default: "",
+      },
+
+      town: {
+        type: String,
+        default: "",
+      },
+
+      landmark: {
+        type: String,
+        default: "",
+      },
     },
 
     installationRequired: {
@@ -98,11 +101,13 @@ const orderSchema = new mongoose.Schema(
     deliveryFee: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
     installationFee: {
       type: Number,
       default: 0,
+      min: 0,
     },
 
     total: {
@@ -118,7 +123,7 @@ const orderSchema = new mongoose.Schema(
         "mobile-money",
         "card",
       ],
-      default: "pay-on-delivery",
+      required: true,
     },
 
     paymentStatus: {
@@ -146,9 +151,22 @@ const orderSchema = new mongoose.Schema(
       default: "pending",
     },
 
+    /*
+     * true means this order has already
+     * deducted stock from inventory.
+     *
+     * Existing orders created before this
+     * feature will default to false.
+     */
+    stockDeducted: {
+      type: Boolean,
+      default: false,
+    },
+
     notes: {
       type: String,
       default: "",
+      trim: true,
     },
   },
   {

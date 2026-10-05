@@ -3,17 +3,17 @@ import {
   useState,
 } from "react";
 
-import { Link } from "react-router-dom";
+import {
+  Link,
+} from "react-router-dom";
 
 import {
-  ArrowLeft,
   CheckCircle2,
-  CreditCard,
+  ChevronLeft,
   MapPin,
   PackageCheck,
   ShoppingBag,
   Truck,
-  UserRound,
   Wrench,
 } from "lucide-react";
 
@@ -21,11 +21,13 @@ import {
   useCart,
 } from "../context/CartContext";
 
+import {
+  useBusinessSettings,
+} from "../context/BusinessSettingsContext";
+
 import ProductVisual from "../components/shop/ProductVisual";
 
-import {
-  createOrder,
-} from "../services/orderService";
+import * as orderService from "../services/orderService";
 
 const initialForm = {
   fullName: "",
@@ -42,7 +44,8 @@ const initialForm = {
   installationRequired:
     false,
 
-  installationAddress: "",
+  installationAddress:
+    "",
 
   paymentMethod:
     "pay-on-delivery",
@@ -51,24 +54,41 @@ const initialForm = {
 };
 
 export default function Checkout() {
+  const cart =
+    useCart();
+
   const {
-    cartItems,
-    subtotal,
-    clearCart,
-  } = useCart();
+    settings,
+  } = useBusinessSettings();
 
-  const [form, setForm] =
-    useState(initialForm);
+  /*
+   * These fallbacks make this file
+   * compatible with the cart naming
+   * used during earlier phases.
+   */
+  const items =
+    cart.cartItems ||
+    cart.items ||
+    cart.cart ||
+    [];
 
-  const [errors, setErrors] =
-    useState({});
-
-  const [submitting, setSubmitting] =
-    useState(false);
+  const clearCart =
+    cart.clearCart ||
+    (() => {});
 
   const [
-    submitError,
-    setSubmitError,
+    form,
+    setForm,
+  ] = useState(initialForm);
+
+  const [
+    submitting,
+    setSubmitting,
+  ] = useState(false);
+
+  const [
+    error,
+    setError,
   ] = useState("");
 
   const [
@@ -76,284 +96,345 @@ export default function Checkout() {
     setCompletedOrder,
   ] = useState(null);
 
-  const deliveryFee =
-    useMemo(() => {
-      return 0;
-    }, []);
-
-  const installationFee = 0;
-
-  const total =
-    subtotal +
-    deliveryFee +
-    installationFee;
-
-  const handleChange = (
-    event
-  ) => {
-    const {
-      name,
-      value,
-      type,
-      checked,
-    } = event.target;
-
-    setForm((current) => ({
-      ...current,
-
-      [name]:
-        type === "checkbox"
-          ? checked
-          : value,
-    }));
-
-    setErrors((current) => ({
-      ...current,
-      [name]: "",
-    }));
-
-    setSubmitError("");
-  };
-
-  const validate = () => {
-    const nextErrors = {};
-
-    if (!form.fullName.trim()) {
-      nextErrors.fullName =
-        "Please enter your full name.";
-    }
-
-    if (!form.phone.trim()) {
-      nextErrors.phone =
-        "Please enter your phone number.";
-    } else if (
-      form.phone.replace(
-        /\D/g,
-        ""
-      ).length < 9
-    ) {
-      nextErrors.phone =
-        "Please enter a valid phone number.";
-    }
-
-    if (
-      form.fulfillmentMethod ===
-      "delivery"
-    ) {
-      if (!form.address.trim()) {
-        nextErrors.address =
-          "Please enter your delivery address.";
-      }
-
-      if (!form.town.trim()) {
-        nextErrors.town =
-          "Please enter your town or area.";
-      }
-    }
-
-    if (
-      form.installationRequired &&
-      !form.installationAddress.trim()
-    ) {
-      nextErrors.installationAddress =
-        "Please enter the installation address.";
-    }
-
-    return nextErrors;
-  };
-
-  const handleSubmit = async (
-    event
-  ) => {
-    event.preventDefault();
-
-    const nextErrors =
-      validate();
-
-    if (
-      Object.keys(
-        nextErrors
-      ).length > 0
-    ) {
-      setErrors(nextErrors);
-
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setSubmitError("");
-
-      const orderPayload = {
-        customer: {
-          fullName:
-            form.fullName.trim(),
-
-          phone:
-            form.phone.trim(),
-
-          email:
-            form.email.trim(),
-        },
-
-        items: cartItems.map(
-          (item) => ({
-            product: item._id,
-            quantity:
-              item.quantity,
-          })
+  const subtotal =
+    useMemo(
+      () =>
+        items.reduce(
+          (total, item) =>
+            total +
+            Number(
+              item.price || 0
+            ) *
+              Number(
+                item.quantity ||
+                  1
+              ),
+          0
         ),
+      [items]
+    );
 
-        fulfillmentMethod:
-          form.fulfillmentMethod,
+  const handleChange =
+    (event) => {
+      const {
+        name,
+        value,
+        type,
+        checked,
+      } = event.target;
 
-        deliveryAddress: {
-          address:
-            form.address.trim(),
+      setForm(
+        (current) => ({
+          ...current,
 
-          town:
-            form.town.trim(),
+          [name]:
+            type ===
+            "checkbox"
+              ? checked
+              : value,
+        })
+      );
 
-          landmark:
-            form.landmark.trim(),
-        },
+      setError("");
+    };
 
-        installationRequired:
-          form.installationRequired,
+  const handleSubmit =
+    async (event) => {
+      event.preventDefault();
 
-        installationAddress:
-          form.installationAddress.trim(),
-
-        paymentMethod:
-          form.paymentMethod,
-
-        notes:
-          form.notes.trim(),
-      };
-
-      const order =
-        await createOrder(
-          orderPayload
+      if (
+        items.length === 0
+      ) {
+        setError(
+          "Your cart is empty."
         );
 
-      setCompletedOrder(order);
+        return;
+      }
 
-      clearCart();
+      if (
+        !form.fullName.trim() ||
+        !form.phone.trim()
+      ) {
+        setError(
+          "Please enter your name and phone number."
+        );
 
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-    } catch (error) {
-      console.error(
-        "Order submission failed:",
-        error
-      );
+        return;
+      }
 
-      setSubmitError(
-        error.response?.data
-          ?.message ||
-          "We could not submit your order. Please try again."
-      );
+      if (
+        form.fulfillmentMethod ===
+          "delivery" &&
+        (!form.address.trim() ||
+          !form.town.trim())
+      ) {
+        setError(
+          "Please provide your delivery address and town."
+        );
 
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
+        return;
+      }
+
+      if (
+        form.installationRequired &&
+        !form.installationAddress.trim()
+      ) {
+        setError(
+          "Please provide the installation address."
+        );
+
+        return;
+      }
+
+      try {
+        setSubmitting(true);
+        setError("");
+
+        const createOrder =
+          orderService.createOrder ||
+          orderService.submitOrder;
+
+        if (!createOrder) {
+          throw new Error(
+            "Order service function was not found."
+          );
+        }
+
+        const payload = {
+          customer: {
+            fullName:
+              form.fullName.trim(),
+
+            phone:
+              form.phone.trim(),
+
+            email:
+              form.email.trim(),
+          },
+
+          items: items.map(
+            (item) => ({
+              product:
+                item._id ||
+                item.id,
+
+              quantity:
+                Number(
+                  item.quantity ||
+                    1
+                ),
+            })
+          ),
+
+          fulfillmentMethod:
+            form.fulfillmentMethod,
+
+          deliveryAddress:
+            form.fulfillmentMethod ===
+            "delivery"
+              ? {
+                  address:
+                    form.address.trim(),
+
+                  town:
+                    form.town.trim(),
+
+                  landmark:
+                    form.landmark.trim(),
+                }
+              : null,
+
+          installationRequired:
+            form.installationRequired,
+
+          installationAddress:
+            form.installationRequired
+              ? form.installationAddress.trim()
+              : "",
+
+          paymentMethod:
+            form.paymentMethod,
+
+          notes:
+            form.notes.trim(),
+        };
+
+        const result =
+          await createOrder(
+            payload
+          );
+
+        const order =
+          result?.order ||
+          result?.data?.order ||
+          result;
+
+        setCompletedOrder(
+          order
+        );
+
+        clearCart();
+
+        window.scrollTo({
+          top: 0,
+          behavior: "smooth",
+        });
+      } catch (error) {
+        console.error(error);
+
+        setError(
+          error.response?.data
+            ?.message ||
+            error.message ||
+            "Unable to place your order. Please try again."
+        );
+      } finally {
+        setSubmitting(false);
+      }
+    };
 
   if (completedOrder) {
     return (
-      <OrderSuccess
-        order={
-          completedOrder
-        }
-      />
+      <main className="min-h-[70vh] bg-[#F8FAFC] px-5 py-16 sm:px-6">
+
+        <div className="mx-auto max-w-2xl rounded-3xl border border-gray-200 bg-white p-8 text-center shadow-sm sm:p-12">
+
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-green-600">
+            <CheckCircle2
+              size={34}
+            />
+          </div>
+
+          <h1 className="mt-6 text-3xl font-black text-[#0B1F33]">
+            Order Received
+          </h1>
+
+          <p className="mt-3 text-sm leading-7 text-gray-500">
+            Thank you. Your order
+            has been submitted
+            successfully.
+          </p>
+
+          {completedOrder.orderNumber && (
+            <div className="mt-7 rounded-2xl bg-[#EAF6FF] p-5">
+
+              <p className="text-xs font-bold uppercase tracking-[0.15em] text-[#1687D9]">
+                Order Reference
+              </p>
+
+              <p className="mt-2 text-xl font-black text-[#0B1F33]">
+                {
+                  completedOrder.orderNumber
+                }
+              </p>
+
+            </div>
+          )}
+
+          <Link
+            to="/shop"
+            className="mt-8 inline-flex items-center justify-center rounded-xl bg-[#1687D9] px-6 py-3 text-sm font-bold text-white"
+          >
+            Continue Shopping
+          </Link>
+
+        </div>
+
+      </main>
     );
   }
 
   if (
-    cartItems.length === 0
+    items.length === 0
   ) {
-    return <EmptyCheckout />;
+    return (
+      <main className="min-h-[65vh] bg-[#F8FAFC] px-5 py-16">
+
+        <div className="mx-auto max-w-xl rounded-3xl border border-gray-200 bg-white p-10 text-center">
+
+          <ShoppingBag
+            size={42}
+            className="mx-auto text-gray-300"
+          />
+
+          <h1 className="mt-5 text-2xl font-black text-[#0B1F33]">
+            Your cart is empty
+          </h1>
+
+          <p className="mt-2 text-sm text-gray-500">
+            Add products before
+            proceeding to checkout.
+          </p>
+
+          <Link
+            to="/shop"
+            className="mt-6 inline-flex rounded-xl bg-[#1687D9] px-6 py-3 text-sm font-bold text-white"
+          >
+            Browse Products
+          </Link>
+
+        </div>
+
+      </main>
+    );
   }
 
   return (
-    <>
-      <section className="bg-[#0B1F33] py-14 text-white sm:py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <Link
-            to="/cart"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-white/70 transition hover:text-white"
-          >
-            <ArrowLeft
-              size={17}
-            />
+    <main className="bg-[#F8FAFC]">
 
-            Back to Cart
-          </Link>
+      <section className="mx-auto max-w-7xl px-5 py-10 sm:px-6 lg:px-8 lg:py-14">
 
-          <div className="mt-6 max-w-3xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#74C5FF]">
-              Secure Checkout
-            </p>
+        <Link
+          to="/cart"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-[#1687D9]"
+        >
+          <ChevronLeft
+            size={17}
+          />
 
-            <h1 className="mt-3 text-4xl font-extrabold sm:text-5xl">
-              Complete Your Order
-            </h1>
+          Back to Cart
+        </Link>
 
-            <p className="mt-4 max-w-2xl leading-8 text-white/65">
-              Enter your contact,
-              delivery and installation
-              information so R&J AC can
-              process your order.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-[#F7FAFC] py-14 sm:py-20">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[1fr_390px] lg:px-8">
+        <div className="mt-7 grid gap-8 lg:grid-cols-[1fr_420px]">
 
           <form
             onSubmit={
               handleSubmit
             }
-            noValidate
             className="space-y-6"
           >
-            {submitError && (
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm font-medium text-red-700">
-                {submitError}
+
+            <div>
+
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#1687D9]">
+                Checkout
+              </p>
+
+              <h1 className="mt-2 text-3xl font-black text-[#0B1F33]">
+                Complete Your Order
+              </h1>
+
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                {error}
               </div>
             )}
 
-            <CheckoutCard>
-              <SectionTitle
-                icon={UserRound}
-                title="Customer Information"
-                description="Tell us who is placing the order."
-              />
+            {/* Customer */}
+            <CheckoutSection
+              title="Customer Information"
+            >
 
-              <div className="mt-7 grid gap-5 sm:grid-cols-2">
+              <div className="grid gap-5 sm:grid-cols-2">
 
                 <Field
                   label="Full Name"
                   required
-                  error={
-                    errors.fullName
-                  }
                 >
                   <input
-                    type="text"
                     name="fullName"
                     value={
                       form.fullName
@@ -361,22 +442,18 @@ export default function Checkout() {
                     onChange={
                       handleChange
                     }
-                    placeholder="Enter your full name"
-                    className={inputClasses(
-                      errors.fullName
-                    )}
+                    required
+                    className={
+                      inputClass
+                    }
                   />
                 </Field>
 
                 <Field
-                  label="Phone Number"
+                  label="Phone"
                   required
-                  error={
-                    errors.phone
-                  }
                 >
                   <input
-                    type="tel"
                     name="phone"
                     value={
                       form.phone
@@ -384,16 +461,19 @@ export default function Checkout() {
                     onChange={
                       handleChange
                     }
-                    placeholder="e.g. 024 XXX XXXX"
-                    className={inputClasses(
-                      errors.phone
-                    )}
+                    required
+                    className={
+                      inputClass
+                    }
                   />
                 </Field>
 
-                <Field
-                  label="Email Address"
-                >
+              </div>
+
+              <div className="mt-5">
+
+                <Field label="Email">
+
                   <input
                     type="email"
                     name="email"
@@ -403,82 +483,93 @@ export default function Checkout() {
                     onChange={
                       handleChange
                     }
-                    placeholder="you@example.com"
-                    className={inputClasses()}
+                    className={
+                      inputClass
+                    }
                   />
+
                 </Field>
 
               </div>
-            </CheckoutCard>
 
-            <CheckoutCard>
-              <SectionTitle
-                icon={Truck}
-                title="Delivery Method"
-                description="Choose how you would like to receive your order."
-              />
+            </CheckoutSection>
 
-              <div className="mt-7 grid gap-4 sm:grid-cols-2">
+            {/* Fulfillment */}
+            <CheckoutSection
+              title="Fulfillment"
+            >
 
-                <SelectionCard
-                  active={
+              <div className="grid gap-4 sm:grid-cols-2">
+
+                <ChoiceCard
+                  icon={Truck}
+                  title="Delivery"
+                  description="Deliver the order to your location."
+                  checked={
                     form.fulfillmentMethod ===
                     "delivery"
                   }
-                  icon={Truck}
-                  title="Delivery"
-                  description="R&J delivers the order to your location."
-                  onClick={() =>
-                    setForm(
-                      (
-                        current
-                      ) => ({
-                        ...current,
-                        fulfillmentMethod:
-                          "delivery",
-                      })
-                    )
-                  }
-                />
+                >
+                  <input
+                    type="radio"
+                    name="fulfillmentMethod"
+                    value="delivery"
+                    checked={
+                      form.fulfillmentMethod ===
+                      "delivery"
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="sr-only"
+                  />
+                </ChoiceCard>
 
-                <SelectionCard
-                  active={
+                <ChoiceCard
+                  icon={
+                    PackageCheck
+                  }
+                  title="Pickup"
+                  description="Arrange collection directly with R&J AC."
+                  checked={
                     form.fulfillmentMethod ===
                     "pickup"
                   }
-                  icon={
-                    ShoppingBag
-                  }
-                  title="Pickup"
-                  description="Collect your order from R&J."
-                  onClick={() =>
-                    setForm(
-                      (
-                        current
-                      ) => ({
-                        ...current,
-                        fulfillmentMethod:
-                          "pickup",
-                      })
-                    )
-                  }
-                />
+                >
+                  <input
+                    type="radio"
+                    name="fulfillmentMethod"
+                    value="pickup"
+                    checked={
+                      form.fulfillmentMethod ===
+                      "pickup"
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className="sr-only"
+                  />
+                </ChoiceCard>
 
               </div>
 
+              {settings.deliveryNote && (
+                <div className="mt-5 rounded-xl bg-[#EAF6FF] p-4 text-sm leading-6 text-[#0B1F33]">
+                  {
+                    settings.deliveryNote
+                  }
+                </div>
+              )}
+
               {form.fulfillmentMethod ===
                 "delivery" && (
-                <div className="mt-7 grid gap-5 sm:grid-cols-2">
+                <div className="mt-6 grid gap-5 sm:grid-cols-2">
 
                   <Field
                     label="Delivery Address"
                     required
-                    error={
-                      errors.address
-                    }
                   >
                     <input
-                      type="text"
                       name="address"
                       value={
                         form.address
@@ -486,22 +577,18 @@ export default function Checkout() {
                       onChange={
                         handleChange
                       }
-                      placeholder="House, street or location"
-                      className={inputClasses(
-                        errors.address
-                      )}
+                      required
+                      className={
+                        inputClass
+                      }
                     />
                   </Field>
 
                   <Field
                     label="Town / Area"
                     required
-                    error={
-                      errors.town
-                    }
                   >
                     <input
-                      type="text"
                       name="town"
                       value={
                         form.town
@@ -509,42 +596,46 @@ export default function Checkout() {
                       onChange={
                         handleChange
                       }
-                      placeholder="Enter town or area"
-                      className={inputClasses(
-                        errors.town
-                      )}
+                      required
+                      className={
+                        inputClass
+                      }
                     />
                   </Field>
 
-                  <Field
-                    label="Nearest Landmark"
-                  >
-                    <input
-                      type="text"
-                      name="landmark"
-                      value={
-                        form.landmark
-                      }
-                      onChange={
-                        handleChange
-                      }
-                      placeholder="Optional landmark"
-                      className={inputClasses()}
-                    />
-                  </Field>
+                  <div className="sm:col-span-2">
+
+                    <Field label="Landmark">
+
+                      <input
+                        name="landmark"
+                        value={
+                          form.landmark
+                        }
+                        onChange={
+                          handleChange
+                        }
+                        placeholder="Optional landmark"
+                        className={
+                          inputClass
+                        }
+                      />
+
+                    </Field>
+
+                  </div>
 
                 </div>
               )}
-            </CheckoutCard>
 
-            <CheckoutCard>
-              <SectionTitle
-                icon={Wrench}
-                title="Installation"
-                description="Would you like R&J to install your AC?"
-              />
+            </CheckoutSection>
 
-              <label className="mt-7 flex cursor-pointer items-start gap-4 rounded-2xl border border-gray-200 bg-[#F9FBFC] p-5">
+            {/* Installation */}
+            <CheckoutSection
+              title="Installation"
+            >
+
+              <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-gray-200 p-5">
 
                 <input
                   type="checkbox"
@@ -555,26 +646,27 @@ export default function Checkout() {
                   onChange={
                     handleChange
                   }
-                  className="mt-1 h-4 w-4 accent-[#1687D9]"
+                  className="mt-1"
                 />
 
                 <div>
-                  <p className="font-bold text-[#0B1F33]">
-                    Add professional
-                    installation
-                  </p>
+
+                  <div className="flex items-center gap-2 font-bold text-[#0B1F33]">
+                    <Wrench
+                      size={18}
+                      className="text-[#1687D9]"
+                    />
+
+                    I need installation
+                  </div>
 
                   <p className="mt-1 text-sm leading-6 text-gray-500">
-                    R&J will review
-                    the AC type,
-                    location and
-                    installation
-                    requirements
-                    before confirming
-                    the final
-                    installation
-                    charge.
+                    R&J AC can contact
+                    you to arrange
+                    professional
+                    installation.
                   </p>
+
                 </div>
 
               </label>
@@ -585,12 +677,8 @@ export default function Checkout() {
                   <Field
                     label="Installation Address"
                     required
-                    error={
-                      errors.installationAddress
-                    }
                   >
                     <input
-                      type="text"
                       name="installationAddress"
                       value={
                         form.installationAddress
@@ -598,95 +686,105 @@ export default function Checkout() {
                       onChange={
                         handleChange
                       }
-                      placeholder="Where should the AC be installed?"
-                      className={inputClasses(
-                        errors.installationAddress
-                      )}
+                      required
+                      className={
+                        inputClass
+                      }
                     />
                   </Field>
 
                 </div>
               )}
-            </CheckoutCard>
 
-            <CheckoutCard>
-              <SectionTitle
-                icon={
-                  CreditCard
-                }
-                title="Payment Method"
-                description="Choose how you would like to pay."
-              />
+            </CheckoutSection>
 
-              <div className="mt-7 space-y-3">
+            {/* Payment */}
+            <CheckoutSection
+              title="Payment"
+            >
 
-                <PaymentOption
+              <label className="flex cursor-pointer items-start gap-4 rounded-2xl border-2 border-[#1687D9] bg-[#EAF6FF] p-5">
+
+                <input
+                  type="radio"
+                  name="paymentMethod"
                   value="pay-on-delivery"
-                  title="Pay on Delivery / Confirmation"
-                  description="Payment details will be confirmed before delivery or installation."
-                  form={form}
-                  handleChange={
-                    handleChange
-                  }
-                />
-
-                <PaymentOption
-                  value="mobile-money"
-                  title="Mobile Money"
-                  description="Mobile Money payment will be enabled later."
-                  form={form}
-                  handleChange={
-                    handleChange
-                  }
-                  disabled
-                />
-
-                <PaymentOption
-                  value="card"
-                  title="Card Payment"
-                  description="Secure online card payments will be connected later."
-                  form={form}
-                  handleChange={
-                    handleChange
-                  }
-                  disabled
-                />
-
-              </div>
-            </CheckoutCard>
-
-            <CheckoutCard>
-              <SectionTitle
-                icon={MapPin}
-                title="Order Notes"
-                description="Add any useful information about your order."
-              />
-
-              <div className="mt-7">
-
-                <textarea
-                  name="notes"
-                  value={
-                    form.notes
+                  checked={
+                    form.paymentMethod ===
+                    "pay-on-delivery"
                   }
                   onChange={
                     handleChange
                   }
-                  rows="5"
-                  placeholder="Example: Please call before delivery..."
-                  className={inputClasses()}
+                  className="mt-1"
                 />
 
+                <div>
+
+                  <p className="font-bold text-[#0B1F33]">
+                    Pay on Delivery /
+                    Collection
+                  </p>
+
+                  <p className="mt-1 text-sm leading-6 text-gray-500">
+                    Payment
+                    arrangements will
+                    be confirmed by
+                    R&J AC.
+                  </p>
+
+                </div>
+
+              </label>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-400">
+                  Mobile Money —
+                  Coming Soon
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-400">
+                  Card Payment —
+                  Coming Soon
+                </div>
+
               </div>
-            </CheckoutCard>
+
+            </CheckoutSection>
+
+            <CheckoutSection
+              title="Additional Notes"
+            >
+
+              <textarea
+                name="notes"
+                value={
+                  form.notes
+                }
+                onChange={
+                  handleChange
+                }
+                rows="4"
+                placeholder="Anything else we should know?"
+                className={
+                  inputClass
+                }
+              />
+
+            </CheckoutSection>
 
             <button
               type="submit"
               disabled={
                 submitting
               }
-              className="w-full rounded-xl bg-[#1687D9] px-6 py-4 font-bold text-white shadow-sm transition hover:bg-[#1176BF] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1687D9] px-6 py-4 font-bold text-white transition hover:bg-[#1176BF] disabled:cursor-not-allowed disabled:opacity-60"
             >
+              <ShoppingBag
+                size={19}
+              />
+
               {submitting
                 ? "Placing Order..."
                 : "Place Order"}
@@ -694,36 +792,44 @@ export default function Checkout() {
 
           </form>
 
+          {/* Summary */}
           <aside>
-            <div className="sticky top-28 rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
 
-              <p className="text-sm font-bold uppercase tracking-[0.16em] text-[#1687D9]">
-                Your Order
-              </p>
+            <div className="sticky top-24 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
 
-              <h2 className="mt-2 text-xl font-bold text-[#0B1F33]">
-                Order Summary
-              </h2>
+              <div className="border-b border-gray-100 p-6">
 
-              <div className="mt-6 space-y-5">
+                <h2 className="text-lg font-black text-[#0B1F33]">
+                  Order Summary
+                </h2>
 
-                {cartItems.map(
+                <p className="mt-1 text-sm text-gray-500">
+                  {items.length} item
+                  {items.length ===
+                  1
+                    ? ""
+                    : "s"}
+                </p>
+
+              </div>
+
+              <div className="max-h-[420px] divide-y divide-gray-100 overflow-y-auto">
+
+                {items.map(
                   (item) => (
                     <div
                       key={
-                        item._id
+                        item._id ||
+                        item.id
                       }
-                      className="flex gap-3"
+                      className="flex gap-4 p-5"
                     >
 
-                      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#EAF6FF] p-3 text-[#1687D9]">
+                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-[#F5F8FA]">
 
                         <ProductVisual
                           product={
                             item
-                          }
-                          iconSize={
-                            26
                           }
                         />
 
@@ -731,10 +837,8 @@ export default function Checkout() {
 
                       <div className="min-w-0 flex-1">
 
-                        <p className="truncate text-sm font-bold text-[#0B1F33]">
-                          {
-                            item.name
-                          }
+                        <p className="line-clamp-2 text-sm font-bold text-[#0B1F33]">
+                          {item.name}
                         </p>
 
                         <p className="mt-1 text-xs text-gray-500">
@@ -744,13 +848,17 @@ export default function Checkout() {
                           }
                         </p>
 
-                        <p className="mt-1 text-sm font-semibold text-[#0B1F33]">
+                        <p className="mt-2 text-sm font-black text-[#0B1F33]">
                           GH₵{" "}
                           {(
                             Number(
-                              item.price
+                              item.price ||
+                                0
                             ) *
-                            item.quantity
+                            Number(
+                              item.quantity ||
+                                1
+                            )
                           ).toLocaleString()}
                         </p>
 
@@ -762,117 +870,85 @@ export default function Checkout() {
 
               </div>
 
-              <div className="mt-6 space-y-4 border-t border-gray-100 pt-6">
+              <div className="border-t border-gray-100 p-6">
 
-                <SummaryRow
-                  label="Subtotal"
-                  value={`GH₵ ${subtotal.toLocaleString()}`}
-                />
+                <div className="flex justify-between text-sm text-gray-500">
 
-                <SummaryRow
-                  label="Delivery"
-                  value={
-                    form.fulfillmentMethod ===
-                    "pickup"
-                      ? "Pickup"
-                      : "To be confirmed"
-                  }
-                />
+                  <span>
+                    Subtotal
+                  </span>
 
-                <SummaryRow
-                  label="Installation"
-                  value={
-                    form.installationRequired
-                      ? "To be confirmed"
-                      : "Not requested"
-                  }
-                />
+                  <span>
+                    GH₵{" "}
+                    {subtotal.toLocaleString()}
+                  </span>
 
-              </div>
+                </div>
 
-              <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-6">
+                <div className="mt-3 flex justify-between text-sm text-gray-500">
 
-                <span className="font-bold text-[#0B1F33]">
-                  Current Total
-                </span>
+                  <span>
+                    Delivery
+                  </span>
 
-                <span className="text-2xl font-black text-[#0B1F33]">
-                  GH₵{" "}
-                  {total.toLocaleString()}
-                </span>
+                  <span>
+                    To be confirmed
+                  </span>
 
-              </div>
+                </div>
 
-              <div className="mt-6 rounded-2xl bg-[#EAF6FF] p-4">
+                <div className="mt-5 flex justify-between border-t border-gray-100 pt-5">
 
-                <div className="flex gap-3">
+                  <span className="font-bold text-[#0B1F33]">
+                    Products Total
+                  </span>
 
-                  <CheckCircle2
-                    size={19}
-                    className="mt-0.5 shrink-0 text-[#1687D9]"
-                  />
-
-                  <p className="text-xs leading-5 text-gray-600">
-                    Final delivery
-                    and installation
-                    charges will be
-                    confirmed before
-                    payment.
-                  </p>
+                  <span className="text-xl font-black text-[#0B1F33]">
+                    GH₵{" "}
+                    {subtotal.toLocaleString()}
+                  </span>
 
                 </div>
 
               </div>
 
             </div>
+
           </aside>
 
         </div>
+
       </section>
-    </>
+
+    </main>
   );
 }
 
-function CheckoutCard({
+const inputClass =
+  "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#17212B] outline-none transition placeholder:text-gray-400 focus:border-[#1687D9] focus:ring-4 focus:ring-[#1687D9]/10";
+
+function CheckoutSection({
+  title,
   children,
 }) {
   return (
-    <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-8">
-      {children}
-    </div>
-  );
-}
+    <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm sm:p-7">
 
-function SectionTitle({
-  icon: Icon,
-  title,
-  description,
-}) {
-  return (
-    <div className="flex items-start gap-3">
+      <h2 className="text-lg font-black text-[#0B1F33]">
+        {title}
+      </h2>
 
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EAF6FF] text-[#1687D9]">
-        <Icon size={19} />
+      <div className="mt-5">
+        {children}
       </div>
 
-      <div>
-        <h2 className="font-bold text-[#0B1F33]">
-          {title}
-        </h2>
-
-        <p className="mt-1 text-sm text-gray-500">
-          {description}
-        </p>
-      </div>
-
-    </div>
+    </section>
   );
 }
 
 function Field({
   label,
-  required = false,
-  error,
+  required,
   children,
 }) {
   return (
@@ -892,256 +968,45 @@ function Field({
 
       {children}
 
-      {error && (
-        <span className="mt-1.5 block text-xs font-medium text-red-500">
-          {error}
-        </span>
-      )}
-
     </label>
   );
 }
 
-function SelectionCard({
-  active,
+function ChoiceCard({
   icon: Icon,
   title,
   description,
-  onClick,
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-2xl border p-5 text-left transition ${
-        active
-          ? "border-[#1687D9] bg-[#EAF6FF]"
-          : "border-gray-200 bg-white hover:border-[#1687D9]/40"
-      }`}
-    >
-
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-[#1687D9] shadow-sm">
-        <Icon size={19} />
-      </div>
-
-      <p className="mt-4 font-bold text-[#0B1F33]">
-        {title}
-      </p>
-
-      <p className="mt-2 text-sm leading-6 text-gray-500">
-        {description}
-      </p>
-
-    </button>
-  );
-}
-
-function PaymentOption({
-  value,
-  title,
-  description,
-  form,
-  handleChange,
-  disabled = false,
+  checked,
+  children,
 }) {
   return (
     <label
-      className={`flex items-start gap-4 rounded-2xl border p-5 ${
-        disabled
-          ? "cursor-not-allowed border-gray-100 bg-gray-50 opacity-60"
-          : "cursor-pointer border-gray-200 bg-white"
+      className={`cursor-pointer rounded-2xl border-2 p-5 transition ${
+        checked
+          ? "border-[#1687D9] bg-[#EAF6FF]"
+          : "border-gray-200 bg-white hover:border-gray-300"
       }`}
     >
 
-      <input
-        type="radio"
-        name="paymentMethod"
-        value={value}
-        checked={
-          form.paymentMethod ===
-          value
+      {children}
+
+      <Icon
+        size={22}
+        className={
+          checked
+            ? "text-[#1687D9]"
+            : "text-gray-400"
         }
-        onChange={
-          handleChange
-        }
-        disabled={
-          disabled
-        }
-        className="mt-1 accent-[#1687D9]"
       />
 
-      <div>
+      <p className="mt-3 font-bold text-[#0B1F33]">
+        {title}
+      </p>
 
-        <div className="flex items-center gap-2">
-
-          <p className="font-bold text-[#0B1F33]">
-            {title}
-          </p>
-
-          {disabled && (
-            <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-bold uppercase text-gray-500">
-              Coming Soon
-            </span>
-          )}
-
-        </div>
-
-        <p className="mt-1 text-sm leading-6 text-gray-500">
-          {description}
-        </p>
-
-      </div>
+      <p className="mt-1 text-sm leading-6 text-gray-500">
+        {description}
+      </p>
 
     </label>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 text-sm">
-
-      <span className="text-gray-500">
-        {label}
-      </span>
-
-      <span className="text-right font-semibold text-[#0B1F33]">
-        {value}
-      </span>
-
-    </div>
-  );
-}
-
-function inputClasses(
-  error
-) {
-  return `w-full rounded-xl border bg-white px-4 py-3 text-sm text-[#17212B] outline-none transition placeholder:text-gray-400 focus:ring-4 ${
-    error
-      ? "border-red-400 focus:border-red-400 focus:ring-red-100"
-      : "border-gray-200 focus:border-[#1687D9] focus:ring-[#1687D9]/10"
-  }`;
-}
-
-function EmptyCheckout() {
-  return (
-    <section className="min-h-[70vh] bg-[#F7FAFC] py-20">
-
-      <div className="mx-auto max-w-3xl px-4 sm:px-6">
-
-        <div className="rounded-3xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm">
-
-          <ShoppingBag
-            size={40}
-            className="mx-auto text-gray-300"
-          />
-
-          <h1 className="mt-5 text-3xl font-bold text-[#0B1F33]">
-            Your cart is empty
-          </h1>
-
-          <p className="mt-3 text-gray-500">
-            Add products before
-            continuing to checkout.
-          </p>
-
-          <Link
-            to="/shop"
-            className="mt-7 inline-flex rounded-xl bg-[#1687D9] px-6 py-3.5 font-semibold text-white"
-          >
-            Browse Products
-          </Link>
-
-        </div>
-
-      </div>
-
-    </section>
-  );
-}
-
-function OrderSuccess({
-  order,
-}) {
-  return (
-    <section className="flex min-h-[75vh] items-center bg-[#F7FAFC] px-4 py-20">
-
-      <div className="mx-auto w-full max-w-2xl rounded-3xl border border-gray-200 bg-white p-8 text-center shadow-sm sm:p-12">
-
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-green-600">
-
-          <PackageCheck
-            size={34}
-          />
-
-        </div>
-
-        <p className="mt-6 text-sm font-bold uppercase tracking-[0.18em] text-[#1687D9]">
-          Order Received
-        </p>
-
-        <h1 className="mt-3 text-3xl font-bold text-[#0B1F33]">
-          Your order has been
-          submitted successfully.
-        </h1>
-
-        <p className="mx-auto mt-4 max-w-lg leading-7 text-gray-600">
-          Keep your order reference.
-          R&J AC can use it to identify
-          and manage your order.
-        </p>
-
-        <div className="mt-8 rounded-2xl bg-[#EAF6FF] p-6">
-
-          <p className="text-sm font-semibold text-gray-600">
-            Order Reference
-          </p>
-
-          <p className="mt-2 text-xl font-black text-[#1687D9] sm:text-2xl">
-            {
-              order.orderNumber
-            }
-          </p>
-
-          <div className="mt-5 border-t border-[#1687D9]/10 pt-5">
-
-            <p className="text-sm text-gray-500">
-              Order Total
-            </p>
-
-            <p className="mt-1 text-2xl font-black text-[#0B1F33]">
-              GH₵{" "}
-              {Number(
-                order.total
-              ).toLocaleString()}
-            </p>
-
-          </div>
-
-        </div>
-
-        <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-
-          <Link
-            to="/shop"
-            className="rounded-xl bg-[#1687D9] px-6 py-3 font-semibold text-white"
-          >
-            Continue Shopping
-          </Link>
-
-          <Link
-            to="/"
-            className="rounded-xl border border-gray-200 px-6 py-3 font-semibold text-[#0B1F33]"
-          >
-            Return Home
-          </Link>
-
-        </div>
-
-      </div>
-
-    </section>
   );
 }

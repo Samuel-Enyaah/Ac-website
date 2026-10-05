@@ -15,6 +15,11 @@ import serviceBookingRoutes from "./routes/serviceBookingRoutes.js";
 import adminAuthRoutes from "./routes/adminAuthRoutes.js";
 import adminDashboardRoutes from "./routes/adminDashboardRoutes.js";
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
+import adminServiceBookingRoutes from "./routes/adminServiceBookingRoutes.js";
+import adminProductRoutes from "./routes/adminProductRoutes.js";
+import adminCustomerRoutes from "./routes/adminCustomerRoutes.js";
+import adminSettingsRoutes from "./routes/adminSettingsRoutes.js";
+import publicSettingsRoutes from "./routes/publicSettingsRoutes.js";
 
 const app = express();
 
@@ -97,6 +102,30 @@ app.use(
 app.use(
   "/api/v1/admin/orders",
   adminOrderRoutes
+);
+
+app.use(
+  "/api/v1/admin/bookings",
+  adminServiceBookingRoutes
+);
+
+app.use(
+  "/api/v1/admin/products",
+  adminProductRoutes
+);
+app.use(
+  "/api/v1/admin/customers",
+  adminCustomerRoutes
+);
+
+app.use(
+  "/api/v1/admin/settings",
+  adminSettingsRoutes
+);
+
+app.use(
+  "/api/v1/settings",
+  publicSettingsRoutes
 );
 
 app.use(notFound);

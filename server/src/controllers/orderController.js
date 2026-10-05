@@ -1,74 +1,121 @@
-import { randomInt } from "crypto";
+import {
+  randomInt,
+} from "crypto";
+
+import mongoose from "mongoose";
 import { z } from "zod";
 
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 
-const createOrderSchema = z.object({
-  customer: z.object({
-    fullName: z.string().trim().min(2),
-    phone: z.string().trim().min(9),
-    email: z
+const createOrderSchema =
+  z.object({
+    customer: z.object({
+      fullName: z
+        .string()
+        .trim()
+        .min(2),
+
+      phone: z
+        .string()
+        .trim()
+        .min(9),
+
+      email: z
+        .string()
+        .trim()
+        .email()
+        .or(z.literal(""))
+        .optional(),
+    }),
+
+    items: z
+      .array(
+        z.object({
+          product: z
+            .string()
+            .trim()
+            .min(1),
+
+          quantity:
+            z.coerce
+              .number()
+              .int()
+              .min(1),
+        })
+      )
+      .min(1),
+
+    fulfillmentMethod:
+      z.enum([
+        "delivery",
+        "pickup",
+      ]),
+
+    deliveryAddress:
+      z
+        .object({
+          address: z
+            .string()
+            .trim()
+            .optional(),
+
+          town: z
+            .string()
+            .trim()
+            .optional(),
+
+          landmark: z
+            .string()
+            .trim()
+            .optional(),
+        })
+        .optional(),
+
+    installationRequired:
+      z.boolean().default(false),
+
+    installationAddress:
+      z
+        .string()
+        .trim()
+        .optional(),
+
+    paymentMethod:
+      z.enum([
+        "pay-on-delivery",
+        "mobile-money",
+        "card",
+      ]),
+
+    notes: z
       .string()
       .trim()
-      .email()
-      .or(z.literal(""))
       .optional(),
-  }),
-
-  items: z
-    .array(
-      z.object({
-        product: z.string().trim().min(1),
-        quantity: z.coerce.number().int().min(1),
-      })
-    )
-    .min(1),
-
-  fulfillmentMethod: z.enum([
-    "delivery",
-    "pickup",
-  ]),
-
-  deliveryAddress: z
-    .object({
-      address: z.string().trim().optional(),
-      town: z.string().trim().optional(),
-      landmark: z.string().trim().optional(),
-    })
-    .optional(),
-
-  installationRequired: z.boolean().default(false),
-
-  installationAddress: z
-    .string()
-    .trim()
-    .optional(),
-
-  paymentMethod: z.enum([
-    "pay-on-delivery",
-    "mobile-money",
-    "card",
-  ]),
-
-  notes: z.string().trim().optional(),
-});
+  });
 
 async function generateOrderNumber() {
-  const year = new Date().getFullYear();
+  const year =
+    new Date().getFullYear();
 
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const number = randomInt(
-      100000,
-      1000000
-    );
+  for (
+    let attempt = 0;
+    attempt < 10;
+    attempt += 1
+  ) {
+    const number =
+      randomInt(
+        100000,
+        1000000
+      );
 
     const orderNumber =
       `RJ-ORD-${year}-${number}`;
 
-    const exists = await Order.exists({
-      orderNumber,
-    });
+    const exists =
+      await Order.exists({
+        orderNumber,
+      });
 
     if (!exists) {
       return orderNumber;
@@ -80,11 +127,87 @@ async function generateOrderNumber() {
   );
 }
 
+/*
+ * If something goes wrong after some
+ * products were reserved, put those
+ * quantities back into inventory.
+ */
+async function rollbackReservedStock(
+  reservedItems
+) {
+  if (
+    !reservedItems.length
+  ) {
+    return;
+  }
+
+  await Promise.all(
+    reservedItems.map(
+      (item) =>
+        Product.updateOne(
+          {
+            _id:
+              item.productId,
+          },
+          {
+            $inc: {
+              stock:
+                item.quantity,
+            },
+          }
+        )
+    )
+  );
+}
+
+/*
+ * Combines duplicate product IDs.
+ *
+ * Example:
+ * product A qty 1
+ * product A qty 2
+ *
+ * becomes:
+ * product A qty 3
+ */
+function normalizeItems(items) {
+  const grouped =
+    new Map();
+
+  for (const item of items) {
+    const current =
+      grouped.get(
+        item.product
+      ) || 0;
+
+    grouped.set(
+      item.product,
+      current +
+        item.quantity
+    );
+  }
+
+  return Array.from(
+    grouped.entries()
+  ).map(
+    ([
+      product,
+      quantity,
+    ]) => ({
+      product,
+      quantity,
+    })
+  );
+}
+
 export async function createOrder(
   req,
   res,
   next
 ) {
+  let reservedItems = [];
+  let orderCreated = false;
+
   try {
     const parsed =
       createOrderSchema.safeParse(
@@ -92,17 +215,23 @@ export async function createOrder(
       );
 
     if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Please check the order information.",
-        errors:
-          parsed.error.flatten()
-            .fieldErrors,
-      });
+      return res
+        .status(400)
+        .json({
+          success: false,
+
+          message:
+            "Please check the order information.",
+
+          errors:
+            parsed.error
+              .flatten()
+              .fieldErrors,
+        });
     }
 
-    const data = parsed.data;
+    const data =
+      parsed.data;
 
     if (
       data.fulfillmentMethod ===
@@ -110,98 +239,185 @@ export async function createOrder(
       (
         !data.deliveryAddress
           ?.address ||
-        !data.deliveryAddress?.town
+        !data.deliveryAddress
+          ?.town
       )
     ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Delivery address and town are required.",
-      });
+      return res
+        .status(400)
+        .json({
+          success: false,
+
+          message:
+            "Delivery address and town are required.",
+        });
     }
 
     if (
       data.installationRequired &&
       !data.installationAddress
     ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Installation address is required.",
-      });
+      return res
+        .status(400)
+        .json({
+          success: false,
+
+          message:
+            "Installation address is required.",
+        });
     }
 
-    const productIds =
-      data.items.map(
-        (item) => item.product
+    const requestedItems =
+      normalizeItems(
+        data.items
       );
 
-    const products =
-      await Product.find({
-        _id: {
-          $in: productIds,
-        },
-        active: true,
-      });
-
-    if (
-      products.length !==
-      productIds.length
+    /*
+     * Validate MongoDB IDs first.
+     */
+    for (
+      const item of
+      requestedItems
     ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "One or more products are unavailable.",
-      });
+      if (
+        !mongoose.isValidObjectId(
+          item.product
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "One or more selected products are invalid.",
+          });
+      }
     }
 
     const orderItems = [];
 
     let subtotal = 0;
 
-    for (const requestedItem of data.items) {
-      const product = products.find(
-        (item) =>
-          item._id.toString() ===
-          requestedItem.product
-      );
+    /*
+     * Reserve each product atomically.
+     *
+     * MongoDB only decreases stock when:
+     *
+     * - product exists
+     * - product is active
+     * - enough stock still exists
+     *
+     * This prevents two customers from
+     * purchasing the same final unit.
+     */
+    for (
+      const requestedItem of
+      requestedItems
+    ) {
+      const product =
+        await Product.findOneAndUpdate(
+          {
+            _id:
+              requestedItem.product,
+
+            active: true,
+
+            stock: {
+              $gte:
+                requestedItem.quantity,
+            },
+          },
+
+          {
+            $inc: {
+              stock:
+                -requestedItem.quantity,
+            },
+          },
+
+          {
+            new: true,
+          }
+        );
 
       if (!product) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "A selected product could not be found.",
-        });
+        /*
+         * Anything already reserved
+         * for this attempted order must
+         * be returned.
+         */
+        await rollbackReservedStock(
+          reservedItems
+        );
+
+        reservedItems = [];
+
+        const currentProduct =
+          await Product.findById(
+            requestedItem.product
+          ).select(
+            "name stock active"
+          );
+
+        if (
+          !currentProduct ||
+          !currentProduct.active
+        ) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+
+              message:
+                "One of the selected products is no longer available.",
+            });
+        }
+
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              `${currentProduct.name} only has ${currentProduct.stock} unit(s) available.`,
+          });
       }
 
-      if (
-        requestedItem.quantity >
-        product.stock
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: `${product.name} only has ${product.stock} item(s) available.`,
-        });
-      }
+      reservedItems.push({
+        productId:
+          product._id,
+
+        quantity:
+          requestedItem.quantity,
+      });
 
       const itemTotal =
-        product.price *
+        Number(
+          product.price
+        ) *
         requestedItem.quantity;
 
       subtotal += itemTotal;
 
       orderItems.push({
-        product: product._id,
-        name: product.name,
-        price: product.price,
+        product:
+          product._id,
+
+        name:
+          product.name,
+
+        price:
+          product.price,
+
         quantity:
           requestedItem.quantity,
       });
     }
 
     /*
-     * Delivery and installation prices
-     * are not automated yet.
+     * These will become configurable
+     * later.
      */
     const deliveryFee = 0;
     const installationFee = 0;
@@ -214,87 +430,159 @@ export async function createOrder(
     const orderNumber =
       await generateOrderNumber();
 
-    const order = await Order.create({
-      orderNumber,
+    const order =
+      await Order.create({
+        orderNumber,
 
-      customer: {
-        fullName:
-          data.customer.fullName,
-        phone: data.customer.phone,
-        email:
-          data.customer.email || "",
-      },
+        customer: {
+          fullName:
+            data.customer
+              .fullName,
 
-      items: orderItems,
+          phone:
+            data.customer
+              .phone,
 
-      fulfillmentMethod:
-        data.fulfillmentMethod,
+          email:
+            data.customer
+              .email || "",
+        },
 
-      deliveryAddress:
-        data.fulfillmentMethod ===
-        "delivery"
-          ? {
-              address:
-                data.deliveryAddress
-                  ?.address || "",
-              town:
-                data.deliveryAddress
-                  ?.town || "",
-              landmark:
-                data.deliveryAddress
-                  ?.landmark || "",
-            }
-          : {
-              address: "",
-              town: "",
-              landmark: "",
-            },
+        items:
+          orderItems,
 
-      installationRequired:
-        data.installationRequired,
+        fulfillmentMethod:
+          data.fulfillmentMethod,
 
-      installationAddress:
-        data.installationRequired
-          ? data.installationAddress
-          : "",
+        deliveryAddress:
+          data.fulfillmentMethod ===
+          "delivery"
+            ? {
+                address:
+                  data
+                    .deliveryAddress
+                    ?.address ||
+                  "",
 
-      subtotal,
-      deliveryFee,
-      installationFee,
-      total,
+                town:
+                  data
+                    .deliveryAddress
+                    ?.town ||
+                  "",
 
-      paymentMethod:
-        data.paymentMethod,
+                landmark:
+                  data
+                    .deliveryAddress
+                    ?.landmark ||
+                  "",
+              }
+            : {
+                address: "",
+                town: "",
+                landmark: "",
+              },
 
-      paymentStatus: "pending",
-      status: "pending",
+        installationRequired:
+          data.installationRequired,
 
-      notes: data.notes || "",
-    });
+        installationAddress:
+          data.installationRequired
+            ? data.installationAddress
+            : "",
+
+        subtotal,
+
+        deliveryFee,
+
+        installationFee,
+
+        total,
+
+        paymentMethod:
+          data.paymentMethod,
+
+        paymentStatus:
+          "pending",
+
+        status:
+          "pending",
+
+        /*
+         * Stock was successfully
+         * deducted above.
+         */
+        stockDeducted:
+          true,
+
+        notes:
+          data.notes || "",
+      });
+
+    orderCreated = true;
 
     res.status(201).json({
       success: true,
+
       message:
         "Order created successfully.",
 
       order: {
-        id: order._id,
+        id:
+          order._id,
+
         orderNumber:
           order.orderNumber,
-        status: order.status,
+
+        status:
+          order.status,
+
         paymentStatus:
           order.paymentStatus,
-        subtotal: order.subtotal,
+
+        subtotal:
+          order.subtotal,
+
         deliveryFee:
           order.deliveryFee,
+
         installationFee:
           order.installationFee,
-        total: order.total,
+
+        total:
+          order.total,
+
         createdAt:
           order.createdAt,
       },
     });
   } catch (error) {
+    /*
+     * Example:
+     *
+     * Stock decreased successfully,
+     * but creating the order record
+     * unexpectedly failed.
+     *
+     * Return the inventory.
+     */
+    if (
+      !orderCreated &&
+      reservedItems.length
+    ) {
+      try {
+        await rollbackReservedStock(
+          reservedItems
+        );
+      } catch (
+        rollbackError
+      ) {
+        console.error(
+          "Stock rollback failed:",
+          rollbackError
+        );
+      }
+    }
+
     next(error);
   }
 }

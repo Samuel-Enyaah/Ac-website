@@ -1,40 +1,66 @@
 import {
-  useEffect,
   useState,
 } from "react";
 
 import {
-  useSearchParams,
+  Link,
 } from "react-router-dom";
 
 import {
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  Clock3,
   MapPin,
-  Phone,
-  Snowflake,
-  UserRound,
   Wrench,
 } from "lucide-react";
 
 import {
-  services,
-} from "../data/services";
+  useBusinessSettings,
+} from "../context/BusinessSettingsContext";
 
-import {
-  createServiceBooking,
-} from "../services/serviceBookingService";
+import * as bookingService from "../services/serviceBookingService";
+
+const serviceTypes = [
+  {
+    value: "installation",
+    label: "AC Installation",
+  },
+  {
+    value: "repairs",
+    label: "AC Repairs",
+  },
+  {
+    value: "maintenance",
+    label:
+      "Servicing & Maintenance",
+  },
+  {
+    value: "diagnosis",
+    label: "AC Diagnosis",
+  },
+  {
+    value: "spare-parts",
+    label: "Spare Parts",
+  },
+  {
+    value: "commercial",
+    label:
+      "Commercial AC Service",
+  },
+];
 
 const initialForm = {
   name: "",
   phone: "",
   email: "",
 
-  serviceType: "",
+  serviceType:
+    "maintenance",
 
   acType: "",
   brand: "",
-  units: "1",
+  units: 1,
 
   description: "",
 
@@ -48,14 +74,16 @@ const initialForm = {
 };
 
 export default function BookService() {
-  const [searchParams] =
-    useSearchParams();
+  const {
+    settings,
+  } = useBusinessSettings();
 
-  const [form, setForm] =
-    useState(initialForm);
-
-  const [errors, setErrors] =
-    useState({});
+  const [
+    form,
+    setForm,
+  ] = useState(
+    initialForm
+  );
 
   const [
     submitting,
@@ -63,8 +91,8 @@ export default function BookService() {
   ] = useState(false);
 
   const [
-    submitError,
-    setSubmitError,
+    error,
+    setError,
   ] = useState("");
 
   const [
@@ -72,135 +100,93 @@ export default function BookService() {
     setCompletedBooking,
   ] = useState(null);
 
-  useEffect(() => {
-    const serviceFromUrl =
-      searchParams.get(
-        "service"
-      );
+  const handleChange =
+    (event) => {
+      const {
+        name,
+        value,
+      } = event.target;
 
-    if (
-      serviceFromUrl &&
-      services.some(
-        (service) =>
-          service.id ===
-          serviceFromUrl
-      )
-    ) {
       setForm(
         (current) => ({
           ...current,
-
-          serviceType:
-            serviceFromUrl,
+          [name]: value,
         })
       );
-    }
-  }, [searchParams]);
 
-  const handleChange = (
-    event
-  ) => {
-    const {
-      name,
-      value,
-    } = event.target;
-
-    setForm(
-      (current) => ({
-        ...current,
-        [name]: value,
-      })
-    );
-
-    setErrors(
-      (current) => ({
-        ...current,
-        [name]: "",
-      })
-    );
-
-    setSubmitError("");
-  };
-
-  const validate = () => {
-    const nextErrors = {};
-
-    if (!form.name.trim()) {
-      nextErrors.name =
-        "Please enter your full name.";
-    }
-
-    if (!form.phone.trim()) {
-      nextErrors.phone =
-        "Please enter your phone number.";
-    } else if (
-      form.phone.replace(
-        /\D/g,
-        ""
-      ).length < 9
-    ) {
-      nextErrors.phone =
-        "Please enter a valid phone number.";
-    }
-
-    if (
-      !form.serviceType
-    ) {
-      nextErrors.serviceType =
-        "Please choose a service.";
-    }
-
-    if (
-      !form.description.trim()
-    ) {
-      nextErrors.description =
-        "Please describe what you need help with.";
-    }
-
-    if (
-      !form.preferredDate
-    ) {
-      nextErrors.preferredDate =
-        "Please choose your preferred date.";
-    }
-
-    if (
-      !form.location.trim()
-    ) {
-      nextErrors.location =
-        "Please enter your service location.";
-    }
-
-    return nextErrors;
-  };
+      setError("");
+    };
 
   const handleSubmit =
     async (event) => {
       event.preventDefault();
 
-      const nextErrors =
-        validate();
-
       if (
-        Object.keys(
-          nextErrors
-        ).length > 0
+        !form.name.trim() ||
+        !form.phone.trim()
       ) {
-        setErrors(
-          nextErrors
+        setError(
+          "Please enter your name and phone number."
         );
 
-        window.scrollTo({
-          top: 0,
-          behavior: "smooth",
-        });
+        return;
+      }
+
+      if (
+        !form.serviceType
+      ) {
+        setError(
+          "Please select a service."
+        );
+
+        return;
+      }
+
+      if (
+        !form.description.trim()
+      ) {
+        setError(
+          "Please tell us what service or problem you need help with."
+        );
+
+        return;
+      }
+
+      if (
+        !form.preferredDate ||
+        !form.preferredTime
+      ) {
+        setError(
+          "Please select your preferred date and time."
+        );
+
+        return;
+      }
+
+      if (
+        !form.location.trim()
+      ) {
+        setError(
+          "Please enter the service location."
+        );
 
         return;
       }
 
       try {
         setSubmitting(true);
-        setSubmitError("");
+        setError("");
+
+        const createBooking =
+          bookingService.createServiceBooking ||
+          bookingService.createBooking ||
+          bookingService.submitServiceBooking;
+
+        if (!createBooking) {
+          throw new Error(
+            "Service booking function was not found."
+          );
+        }
 
         const payload = {
           customer: {
@@ -218,14 +204,17 @@ export default function BookService() {
             form.serviceType,
 
           acType:
-            form.acType,
+            form.acType.trim(),
 
           brand:
             form.brand.trim(),
 
           units:
-            Number(
-              form.units
+            Math.max(
+              Number(
+                form.units
+              ) || 1,
+              1
             ),
 
           description:
@@ -247,13 +236,22 @@ export default function BookService() {
             form.notes.trim(),
         };
 
-        const booking =
-          await createServiceBooking(
+        const result =
+          await createBooking(
             payload
           );
 
+        const booking =
+          result?.booking ||
+          result?.data?.booking ||
+          result;
+
         setCompletedBooking(
           booking
+        );
+
+        setForm(
+          initialForm
         );
 
         window.scrollTo({
@@ -261,21 +259,14 @@ export default function BookService() {
           behavior: "smooth",
         });
       } catch (error) {
-        console.error(
-          "Service booking failed:",
-          error
-        );
+        console.error(error);
 
-        setSubmitError(
+        setError(
           error.response?.data
             ?.message ||
-            "We could not submit your service request. Please try again."
+            error.message ||
+            "Unable to submit your service request. Please try again."
         );
-
-        window.scrollTo({
-          top: 0,
-          behavior: "smooth",
-        });
       } finally {
         setSubmitting(false);
       }
@@ -283,95 +274,169 @@ export default function BookService() {
 
   if (completedBooking) {
     return (
-      <BookingSuccess
-        booking={
-          completedBooking
-        }
-        onReset={() => {
-          setForm(
-            initialForm
-          );
+      <main className="min-h-[70vh] bg-[#F8FAFC] px-5 py-16 sm:px-6">
 
-          setErrors({});
-          setSubmitError("");
+        <div className="mx-auto max-w-2xl rounded-3xl border border-gray-200 bg-white p-8 text-center shadow-sm sm:p-12">
 
-          setCompletedBooking(
-            null
-          );
-        }}
-      />
-    );
-  }
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-green-600">
+            <CheckCircle2
+              size={34}
+            />
+          </div>
 
-  return (
-    <>
-      <section className="bg-[#0B1F33] py-16 text-white sm:py-20">
+          <h1 className="mt-6 text-3xl font-black text-[#0B1F33]">
+            Service Request Received
+          </h1>
 
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <p className="mt-3 text-sm leading-7 text-gray-500">
+            Your service request
+            has been submitted.
+            R&J AC will review the
+            request and contact you.
+          </p>
 
-          <div className="max-w-3xl">
+          {completedBooking.bookingNumber && (
+            <div className="mt-7 rounded-2xl bg-[#EAF6FF] p-5">
 
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-[#74C5FF]">
+              <p className="text-xs font-bold uppercase tracking-[0.15em] text-[#1687D9]">
+                Booking Reference
+              </p>
 
-              <Wrench size={16} />
-
-              Service Booking
+              <p className="mt-2 text-xl font-black text-[#0B1F33]">
+                {
+                  completedBooking.bookingNumber
+                }
+              </p>
 
             </div>
+          )}
 
-            <h1 className="mt-5 text-4xl font-extrabold sm:text-5xl">
-              Book an AC Service
-            </h1>
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
 
-            <p className="mt-5 max-w-2xl leading-8 text-white/65">
-              Tell us what you need,
-              your preferred time and
-              where the service is
-              required. R&J will review
-              your request and follow up.
-            </p>
+            <Link
+              to="/"
+              className="rounded-xl border border-gray-200 px-6 py-3 text-sm font-bold text-[#0B1F33]"
+            >
+              Return Home
+            </Link>
+
+            <button
+              type="button"
+              onClick={() =>
+                setCompletedBooking(
+                  null
+                )
+              }
+              className="rounded-xl bg-[#1687D9] px-6 py-3 text-sm font-bold text-white"
+            >
+              Book Another Service
+            </button>
 
           </div>
 
         </div>
 
-      </section>
+      </main>
+    );
+  }
 
-      <section className="bg-[#F7FAFC] py-16 sm:py-20">
+  return (
+    <main className="bg-[#F8FAFC]">
 
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[1fr_340px] lg:px-8">
+      {/* Hero */}
+      <section className="bg-[#0B1F33] px-5 py-14 text-white sm:px-6 lg:px-8">
 
-          <form
-            onSubmit={
-              handleSubmit
-            }
-            noValidate
-            className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-8"
+        <div className="mx-auto max-w-7xl">
+
+          <Link
+            to="/services"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-white/60 hover:text-white"
           >
-
-            {submitError && (
-              <div className="mb-7 rounded-2xl border border-red-200 bg-red-50 p-5 text-sm font-medium text-red-700">
-                {submitError}
-              </div>
-            )}
-
-            <FormSectionTitle
-              icon={UserRound}
-              title="Customer Information"
-              description="Tell us how we can contact you."
+            <ChevronLeft
+              size={17}
             />
 
-            <div className="mt-7 grid gap-5 sm:grid-cols-2">
+            Services
+          </Link>
+
+          <p className="mt-7 text-sm font-bold uppercase tracking-[0.18em] text-[#58B7F3]">
+            Service Booking
+          </p>
+
+          <h1 className="mt-2 max-w-3xl text-4xl font-black sm:text-5xl">
+            Request professional
+            AC assistance.
+          </h1>
+
+          {settings.serviceCoverage && (
+            <p className="mt-5 max-w-2xl text-base leading-7 text-white/65">
+              {
+                settings.serviceCoverage
+              }
+            </p>
+          )}
+
+        </div>
+
+      </section>
+
+      <section className="mx-auto max-w-5xl px-5 py-12 sm:px-6 lg:px-8 lg:py-16">
+
+        {settings.bookingNote && (
+          <div className="mb-7 rounded-2xl border border-[#D8EBFA] bg-[#EAF6FF] p-5">
+
+            <div className="flex items-start gap-3">
+
+              <Wrench
+                size={20}
+                className="mt-0.5 shrink-0 text-[#1687D9]"
+              />
+
+              <div>
+
+                <p className="font-bold text-[#0B1F33]">
+                  Before you book
+                </p>
+
+                <p className="mt-1 text-sm leading-6 text-[#36536B]">
+                  {
+                    settings.bookingNote
+                  }
+                </p>
+
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
+        {error && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        )}
+
+        <form
+          onSubmit={
+            handleSubmit
+          }
+          className="space-y-6"
+        >
+
+          {/* Customer Details */}
+          <FormSection
+            title="Your Information"
+            description="Tell us how we can contact you."
+          >
+
+            <div className="grid gap-5 sm:grid-cols-2">
 
               <Field
                 label="Full Name"
                 required
-                error={
-                  errors.name
-                }
               >
                 <input
-                  type="text"
                   name="name"
                   value={
                     form.name
@@ -379,22 +444,18 @@ export default function BookService() {
                   onChange={
                     handleChange
                   }
-                  placeholder="Enter your full name"
-                  className={inputClasses(
-                    errors.name
-                  )}
+                  required
+                  className={
+                    inputClass
+                  }
                 />
               </Field>
 
               <Field
-                label="Phone Number"
+                label="Phone"
                 required
-                error={
-                  errors.phone
-                }
               >
                 <input
-                  type="tel"
                   name="phone"
                   value={
                     form.phone
@@ -402,48 +463,50 @@ export default function BookService() {
                   onChange={
                     handleChange
                   }
-                  placeholder="e.g. 024 XXX XXXX"
-                  className={inputClasses(
-                    errors.phone
-                  )}
+                  required
+                  className={
+                    inputClass
+                  }
                 />
               </Field>
 
-              <Field
-                label="Email Address"
-              >
-                <input
-                  type="email"
-                  name="email"
-                  value={
-                    form.email
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  placeholder="you@example.com"
-                  className={inputClasses()}
-                />
-              </Field>
+              <div className="sm:col-span-2">
+
+                <Field label="Email">
+
+                  <input
+                    type="email"
+                    name="email"
+                    value={
+                      form.email
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    className={
+                      inputClass
+                    }
+                  />
+
+                </Field>
+
+              </div>
 
             </div>
 
-            <Divider />
+          </FormSection>
 
-            <FormSectionTitle
-              icon={Snowflake}
-              title="AC & Service Details"
-              description="Help us understand the service you need."
-            />
+          {/* Service */}
+          <FormSection
+            title="Service Details"
+            description="Tell us what type of assistance you need."
+          >
 
-            <div className="mt-7 grid gap-5 sm:grid-cols-2">
+            <div className="grid gap-5 sm:grid-cols-2">
 
               <Field
                 label="Service Type"
                 required
-                error={
-                  errors.serviceType
-                }
               >
                 <select
                   name="serviceType"
@@ -453,39 +516,33 @@ export default function BookService() {
                   onChange={
                     handleChange
                   }
-                  className={inputClasses(
-                    errors.serviceType
-                  )}
+                  required
+                  className={
+                    inputClass
+                  }
                 >
-
-                  <option value="">
-                    Choose a service
-                  </option>
-
-                  {services.map(
+                  {serviceTypes.map(
                     (service) => (
                       <option
                         key={
-                          service.id
+                          service.value
                         }
                         value={
-                          service.id
+                          service.value
                         }
                       >
                         {
-                          service.title
+                          service.label
                         }
                       </option>
                     )
                   )}
-
                 </select>
               </Field>
 
-              <Field
-                label="AC Type"
-              >
-                <select
+              <Field label="AC Type">
+
+                <input
                   name="acType"
                   value={
                     form.acType
@@ -493,43 +550,17 @@ export default function BookService() {
                   onChange={
                     handleChange
                   }
-                  className={inputClasses()}
-                >
-                  <option value="">
-                    Choose AC type
-                  </option>
+                  placeholder="e.g. Split, Window, Cassette"
+                  className={
+                    inputClass
+                  }
+                />
 
-                  <option value="split">
-                    Split AC
-                  </option>
-
-                  <option value="standing">
-                    Standing AC
-                  </option>
-
-                  <option value="cassette">
-                    Cassette AC
-                  </option>
-
-                  <option value="window">
-                    Window AC
-                  </option>
-
-                  <option value="commercial">
-                    Commercial System
-                  </option>
-
-                  <option value="other">
-                    Other
-                  </option>
-                </select>
               </Field>
 
-              <Field
-                label="AC Brand"
-              >
+              <Field label="Brand">
+
                 <input
-                  type="text"
                   name="brand"
                   value={
                     form.brand
@@ -537,165 +568,180 @@ export default function BookService() {
                   onChange={
                     handleChange
                   }
-                  placeholder="e.g. Samsung, LG"
-                  className={inputClasses()}
+                  placeholder="e.g. Midea, Samsung"
+                  className={
+                    inputClass
+                  }
                 />
+
               </Field>
 
               <Field
                 label="Number of Units"
+                required
               >
                 <input
                   type="number"
-                  name="units"
                   min="1"
+                  name="units"
                   value={
                     form.units
                   }
                   onChange={
                     handleChange
                   }
-                  className={inputClasses()}
+                  required
+                  className={
+                    inputClass
+                  }
                 />
               </Field>
 
-            </div>
+              <div className="sm:col-span-2">
 
-            <div className="mt-5">
+                <Field
+                  label="Describe the Service or Problem"
+                  required
+                >
+                  <textarea
+                    name="description"
+                    value={
+                      form.description
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    required
+                    rows="5"
+                    placeholder="Tell us what is happening with the AC or what service you need..."
+                    className={
+                      inputClass
+                    }
+                  />
+                </Field>
 
-              <Field
-                label="Describe the Problem or Service Needed"
-                required
-                error={
-                  errors.description
-                }
-              >
-                <textarea
-                  name="description"
-                  value={
-                    form.description
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  rows="5"
-                  placeholder="Example: My AC turns on but is not cooling properly..."
-                  className={inputClasses(
-                    errors.description
-                  )}
-                />
-              </Field>
+              </div>
 
             </div>
 
-            <Divider />
+          </FormSection>
 
-            <FormSectionTitle
-              icon={CalendarDays}
-              title="Schedule"
-              description="Choose when you would prefer the service."
-            />
+          {/* Schedule */}
+          <FormSection
+            title="Preferred Schedule"
+            description="Tell us when you would prefer the service."
+          >
 
-            <div className="mt-7 grid gap-5 sm:grid-cols-2">
+            <div className="grid gap-5 sm:grid-cols-2">
 
               <Field
                 label="Preferred Date"
                 required
-                error={
-                  errors.preferredDate
-                }
               >
-                <input
-                  type="date"
-                  name="preferredDate"
-                  value={
-                    form.preferredDate
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  min={
-                    new Date()
-                      .toISOString()
-                      .split("T")[0]
-                  }
-                  className={inputClasses(
-                    errors.preferredDate
-                  )}
-                />
+
+                <div className="relative">
+
+                  <CalendarDays
+                    size={18}
+                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  />
+
+                  <input
+                    type="date"
+                    name="preferredDate"
+                    value={
+                      form.preferredDate
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    min={
+                      new Date()
+                        .toISOString()
+                        .split(
+                          "T"
+                        )[0]
+                    }
+                    required
+                    className={`${inputClass} pl-11`}
+                  />
+
+                </div>
+
               </Field>
 
               <Field
                 label="Preferred Time"
+                required
               >
-                <select
-                  name="preferredTime"
-                  value={
-                    form.preferredTime
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  className={inputClasses()}
-                >
-                  <option value="">
-                    Choose preferred time
-                  </option>
 
-                  <option value="morning">
-                    Morning
-                  </option>
+                <div className="relative">
 
-                  <option value="afternoon">
-                    Afternoon
-                  </option>
+                  <Clock3
+                    size={18}
+                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  />
 
-                  <option value="evening">
-                    Evening
-                  </option>
-                </select>
+                  <input
+                    type="time"
+                    name="preferredTime"
+                    value={
+                      form.preferredTime
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    required
+                    className={`${inputClass} pl-11`}
+                  />
+
+                </div>
+
               </Field>
 
             </div>
 
-            <Divider />
+          </FormSection>
 
-            <FormSectionTitle
-              icon={MapPin}
-              title="Service Location"
-              description="Tell us where the technician should come."
-            />
+          {/* Location */}
+          <FormSection
+            title="Service Location"
+            description="Where should our team provide the service?"
+          >
 
-            <div className="mt-7 grid gap-5 sm:grid-cols-2">
+            <div className="grid gap-5 sm:grid-cols-2">
 
               <Field
-                label="Location / Area"
+                label="Location / Address"
                 required
-                error={
-                  errors.location
-                }
               >
-                <input
-                  type="text"
-                  name="location"
-                  value={
-                    form.location
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  placeholder="Enter town, area or address"
-                  className={inputClasses(
-                    errors.location
-                  )}
-                />
+
+                <div className="relative">
+
+                  <MapPin
+                    size={18}
+                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  />
+
+                  <input
+                    name="location"
+                    value={
+                      form.location
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    required
+                    className={`${inputClass} pl-11`}
+                  />
+
+                </div>
+
               </Field>
 
-              <Field
-                label="Nearest Landmark"
-              >
+              <Field label="Landmark">
+
                 <input
-                  type="text"
                   name="landmark"
                   value={
                     form.landmark
@@ -704,163 +750,97 @@ export default function BookService() {
                     handleChange
                   }
                   placeholder="Optional landmark"
-                  className={inputClasses()}
+                  className={
+                    inputClass
+                  }
                 />
+
               </Field>
 
             </div>
 
-            <Divider />
+          </FormSection>
 
-            <FormSectionTitle
-              icon={Wrench}
-              title="Additional Information"
-              description="Anything else R&J should know before reviewing your request."
+          <FormSection
+            title="Additional Notes"
+            description="Anything else our team should know?"
+          >
+
+            <textarea
+              name="notes"
+              value={
+                form.notes
+              }
+              onChange={
+                handleChange
+              }
+              rows="4"
+              placeholder="Optional additional information..."
+              className={
+                inputClass
+              }
             />
 
-            <div className="mt-7">
+          </FormSection>
 
-              <Field
-                label="Additional Notes"
-              >
-                <textarea
-                  name="notes"
-                  value={
-                    form.notes
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  rows="4"
-                  placeholder="Anything else we should know?"
-                  className={inputClasses()}
-                />
-              </Field>
+          <button
+            type="submit"
+            disabled={
+              submitting
+            }
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1687D9] px-6 py-4 font-bold text-white transition hover:bg-[#1176BF] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Wrench size={19} />
 
-            </div>
+            {submitting
+              ? "Submitting Request..."
+              : "Submit Service Request"}
+          </button>
 
-            <button
-              type="submit"
-              disabled={
-                submitting
-              }
-              className="mt-8 w-full rounded-xl bg-[#1687D9] px-6 py-4 font-bold text-white transition hover:bg-[#1176BF] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting
-                ? "Submitting Request..."
-                : "Submit Service Request"}
-            </button>
-
-          </form>
-
-          <aside className="space-y-5">
-
-            <div className="rounded-3xl bg-[#0B1F33] p-7 text-white">
-
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#74C5FF]">
-                Booking Support
-              </p>
-
-              <h2 className="mt-3 text-2xl font-bold">
-                Before you submit
-              </h2>
-
-              <div className="mt-6 space-y-4">
-
-                {[
-                  "Provide an active phone number.",
-                  "Describe the AC issue clearly.",
-                  "Choose a suitable service date.",
-                  "Enter the correct service location.",
-                  "Keep your booking reference after submission.",
-                ].map(
-                  (item) => (
-                    <div
-                      key={
-                        item
-                      }
-                      className="flex items-start gap-3 text-sm text-white/70"
-                    >
-                      <CheckCircle2
-                        size={17}
-                        className="mt-0.5 shrink-0 text-[#74C5FF]"
-                      />
-
-                      <span>
-                        {item}
-                      </span>
-                    </div>
-                  )
-                )}
-
-              </div>
-
-            </div>
-
-            <div className="rounded-3xl border border-gray-200 bg-white p-7">
-
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EAF6FF] text-[#1687D9]">
-                <Phone
-                  size={20}
-                />
-              </div>
-
-              <h3 className="mt-4 text-lg font-bold text-[#0B1F33]">
-                Need urgent assistance?
-              </h3>
-
-              <p className="mt-2 text-sm leading-6 text-gray-600">
-                R&J phone and WhatsApp
-                details will be connected
-                to the company settings
-                before production.
-              </p>
-
-            </div>
-
-          </aside>
-
-        </div>
+        </form>
 
       </section>
-    </>
+
+    </main>
   );
 }
 
-function FormSectionTitle({
-  icon: Icon,
+const inputClass =
+  "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#17212B] outline-none transition placeholder:text-gray-400 focus:border-[#1687D9] focus:ring-4 focus:ring-[#1687D9]/10";
+
+function FormSection({
   title,
   description,
+  children,
 }) {
   return (
-    <div className="flex items-start gap-3">
+    <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
 
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EAF6FF] text-[#1687D9]">
-        <Icon
-          size={19}
-        />
-      </div>
+      <div className="border-b border-gray-100 pb-5">
 
-      <div>
-
-        <h2 className="font-bold text-[#0B1F33]">
+        <h2 className="text-lg font-black text-[#0B1F33]">
           {title}
         </h2>
 
-        <p className="mt-1 text-sm text-gray-500">
-          {description}
-        </p>
+        {description && (
+          <p className="mt-1 text-sm text-gray-500">
+            {description}
+          </p>
+        )}
 
       </div>
 
-    </div>
+      <div className="pt-6">
+        {children}
+      </div>
+
+    </section>
   );
 }
 
 function Field({
   label,
-  required = false,
-  error,
+  required,
   children,
 }) {
   return (
@@ -880,104 +860,6 @@ function Field({
 
       {children}
 
-      {error && (
-        <span className="mt-1.5 block text-xs font-medium text-red-500">
-          {error}
-        </span>
-      )}
-
     </label>
-  );
-}
-
-function inputClasses(
-  error
-) {
-  return `w-full rounded-xl border bg-white px-4 py-3 text-sm text-[#17212B] outline-none transition placeholder:text-gray-400 focus:ring-4 ${
-    error
-      ? "border-red-400 focus:border-red-400 focus:ring-red-100"
-      : "border-gray-200 focus:border-[#1687D9] focus:ring-[#1687D9]/10"
-  }`;
-}
-
-function Divider() {
-  return (
-    <div className="my-8 border-t border-gray-100" />
-  );
-}
-
-function BookingSuccess({
-  booking,
-  onReset,
-}) {
-  return (
-    <section className="flex min-h-[75vh] items-center bg-[#F7FAFC] px-4 py-20">
-
-      <div className="mx-auto w-full max-w-2xl rounded-3xl border border-gray-200 bg-white p-8 text-center shadow-sm sm:p-12">
-
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-green-600">
-
-          <CheckCircle2
-            size={34}
-          />
-
-        </div>
-
-        <p className="mt-6 text-sm font-bold uppercase tracking-[0.18em] text-[#1687D9]">
-          Request Received
-        </p>
-
-        <h1 className="mt-3 text-3xl font-bold text-[#0B1F33]">
-          Your service request has
-          been submitted successfully.
-        </h1>
-
-        <p className="mx-auto mt-4 max-w-lg leading-7 text-gray-600">
-          Keep your booking reference.
-          R&J AC will use it to identify
-          and manage your service request.
-        </p>
-
-        <div className="mt-8 rounded-2xl bg-[#EAF6FF] p-6">
-
-          <p className="text-sm font-semibold text-gray-600">
-            Service Reference
-          </p>
-
-          <p className="mt-2 text-xl font-black text-[#1687D9] sm:text-2xl">
-            {
-              booking.bookingNumber
-            }
-          </p>
-
-          <div className="mt-5 border-t border-[#1687D9]/10 pt-5">
-
-            <p className="text-sm text-gray-500">
-              Current Status
-            </p>
-
-            <p className="mt-1 font-bold capitalize text-[#0B1F33]">
-              {
-                booking.status
-              }
-            </p>
-
-          </div>
-
-        </div>
-
-        <button
-          type="button"
-          onClick={
-            onReset
-          }
-          className="mt-8 rounded-xl bg-[#1687D9] px-6 py-3 font-semibold text-white"
-        >
-          Submit Another Request
-        </button>
-
-      </div>
-
-    </section>
   );
 }

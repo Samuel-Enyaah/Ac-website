@@ -21,9 +21,16 @@ import NotFound from "../pages/NotFound";
 
 import AdminLogin from "../pages/admin/AdminLogin";
 import AdminDashboard from "../pages/admin/AdminDashboard";
-import AdminComingSoon from "../pages/admin/AdminComingSoon";
 import AdminOrders from "../pages/admin/AdminOrders";
 import AdminOrderDetails from "../pages/admin/AdminOrderDetails";
+import AdminBookings from "../pages/admin/AdminBookings";
+import AdminBookingDetails from "../pages/admin/AdminBookingDetails";
+import AdminProducts from "../pages/admin/AdminProducts";
+import AdminProductForm from "../pages/admin/AdminProductForm";
+import AdminInventory from "../pages/admin/AdminInventory";
+import AdminCustomers from "../pages/admin/AdminCustomers";
+import AdminCustomerDetails from "../pages/admin/AdminCustomerDetails";
+import AdminSettings from "../pages/admin/AdminSettings";
 
 export default function AppRoutes() {
   return (
@@ -131,42 +138,70 @@ export default function AppRoutes() {
               }
             />
 
+            <Route
+                path="bookings"
+                element={
+                  <AdminBookings />
+                }
+            />
+
+            <Route
+              path="bookings/:bookingId"
+              element={
+                <AdminBookingDetails />
+              }
+            />
+
+         <Route
+  path="products"
+  element={
+    <AdminProducts />
+  }
+/>
+
           <Route
-            path="bookings"
+            path="products/new"
             element={
-              <AdminComingSoon title="Service Bookings" />
+              <AdminProductForm />
             }
           />
 
           <Route
-            path="products"
+            path="products/:productId/edit"
             element={
-              <AdminComingSoon title="Products" />
+              <AdminProductForm />
             }
           />
 
           <Route
             path="inventory"
             element={
-              <AdminComingSoon title="Inventory" />
+              <AdminInventory />
             }
           />
 
           <Route
             path="customers"
             element={
-              <AdminComingSoon title="Customers" />
+              <AdminCustomers />
+            }
+          />
+
+          <Route
+            path="customers/:customerKey"
+            element={
+              <AdminCustomerDetails />
             }
           />
 
           <Route
             path="settings"
             element={
-              <AdminComingSoon title="Settings" />
+              <AdminSettings />
             }
           />
 
-        </Route>
+          </Route>
 
       </Route>
 
