@@ -4,7 +4,11 @@ import BusinessSettings from "../models/BusinessSettings.js";
 
 const optionalUrl =
   z.union([
-    z.string().trim().url(),
+    z
+      .string()
+      .trim()
+      .url(),
+
     z.literal(""),
   ]);
 
@@ -41,9 +45,11 @@ const settingsSchema =
       .max(40),
 
     email: z.union([
-      z.string()
+      z
+        .string()
         .trim()
         .email(),
+
       z.literal(""),
     ]),
 
@@ -70,9 +76,6 @@ const settingsSchema =
     mapUrl:
       optionalUrl,
 
-    logoUrl:
-      optionalUrl,
-
     deliveryNote: z
       .string()
       .trim()
@@ -90,40 +93,40 @@ const settingsSchema =
 
     openingHours:
       z.object({
-        monday:
-          z.string()
-            .trim()
-            .max(100),
+        monday: z
+          .string()
+          .trim()
+          .max(100),
 
-        tuesday:
-          z.string()
-            .trim()
-            .max(100),
+        tuesday: z
+          .string()
+          .trim()
+          .max(100),
 
-        wednesday:
-          z.string()
-            .trim()
-            .max(100),
+        wednesday: z
+          .string()
+          .trim()
+          .max(100),
 
-        thursday:
-          z.string()
-            .trim()
-            .max(100),
+        thursday: z
+          .string()
+          .trim()
+          .max(100),
 
-        friday:
-          z.string()
-            .trim()
-            .max(100),
+        friday: z
+          .string()
+          .trim()
+          .max(100),
 
-        saturday:
-          z.string()
-            .trim()
-            .max(100),
+        saturday: z
+          .string()
+          .trim()
+          .max(100),
 
-        sunday:
-          z.string()
-            .trim()
-            .max(100),
+        sunday: z
+          .string()
+          .trim()
+          .max(100),
       }),
 
     socialLinks:
@@ -169,6 +172,7 @@ export async function getAdminSettings(
 
     res.status(200).json({
       success: true,
+
       settings,
     });
   } catch (error) {
@@ -203,6 +207,17 @@ export async function updateAdminSettings(
         });
     }
 
+    /*
+     * Logo fields are deliberately
+     * absent from parsed.data.
+     *
+     * That prevents a normal
+     * Settings save from breaking
+     * the relationship between:
+     *
+     * logoUrl
+     * logoPublicId
+     */
     const settings =
       await BusinessSettings.findOneAndUpdate(
         {
@@ -288,6 +303,10 @@ export async function getPublicSettings(
         mapUrl:
           settings.mapUrl,
 
+        /*
+         * Public frontend only
+         * receives the usable URL.
+         */
         logoUrl:
           settings.logoUrl,
 

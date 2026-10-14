@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -7,19 +8,29 @@ import {
   Building2,
   CheckCircle2,
   Clock3,
-  Globe2,
+  ImagePlus,
+  Loader2,
   MapPin,
   MessageCircle,
   Phone,
   RefreshCw,
   Save,
   Share2,
+  Trash2,
+  UploadCloud,
+  X,
 } from "lucide-react";
 
 import {
+  deleteBusinessLogo,
   getAdminSettings,
   updateAdminSettings,
+  uploadBusinessLogo,
 } from "../../services/adminSettingsService";
+
+import {
+  useBusinessSettings,
+} from "../../context/BusinessSettingsContext";
 
 const initialSettings = {
   businessName: "R&J AC",
@@ -41,7 +52,9 @@ const initialSettings = {
   country: "Ghana",
 
   mapUrl: "",
+
   logoUrl: "",
+  logoPublicId: "",
 
   deliveryNote:
     "Delivery arrangements and charges are confirmed before dispatch.",
@@ -82,13 +95,39 @@ const initialSettings = {
   },
 };
 
+const MAX_FILE_SIZE =
+  5 * 1024 * 1024;
+
+const allowedTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
+
 export default function AdminSettings() {
+  const fileInputRef =
+    useRef(null);
+
+  const {
+    refreshSettings,
+  } = useBusinessSettings();
+
   const [
     form,
     setForm,
   ] = useState(
     initialSettings
   );
+
+  const [
+    selectedLogo,
+    setSelectedLogo,
+  ] = useState(null);
+
+  const [
+    previewUrl,
+    setPreviewUrl,
+  ] = useState("");
 
   const [
     loading,
@@ -98,6 +137,16 @@ export default function AdminSettings() {
   const [
     saving,
     setSaving,
+  ] = useState(false);
+
+  const [
+    uploadingLogo,
+    setUploadingLogo,
+  ] = useState(false);
+
+  const [
+    deletingLogo,
+    setDeletingLogo,
   ] = useState(false);
 
   const [
@@ -150,6 +199,31 @@ export default function AdminSettings() {
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    if (!selectedLogo) {
+      setPreviewUrl("");
+      return;
+    }
+
+    const url =
+      URL.createObjectURL(
+        selectedLogo
+      );
+
+    setPreviewUrl(url);
+
+    return () =>
+      URL.revokeObjectURL(
+        url
+      );
+  }, [selectedLogo]);
+
+  const resetMessages =
+    () => {
+      setSuccess("");
+      setError("");
+    };
+
   const handleChange =
     (event) => {
       const {
@@ -164,8 +238,7 @@ export default function AdminSettings() {
         })
       );
 
-      setSuccess("");
-      setError("");
+      resetMessages();
     };
 
   const handleOpeningHours =
@@ -186,8 +259,7 @@ export default function AdminSettings() {
         })
       );
 
-      setSuccess("");
-      setError("");
+      resetMessages();
     };
 
   const handleSocialLink =
@@ -208,8 +280,170 @@ export default function AdminSettings() {
         })
       );
 
-      setSuccess("");
+      resetMessages();
+    };
+
+  const handleLogoSelection =
+    (event) => {
+      const file =
+        event.target
+          .files?.[0];
+
+      event.target.value =
+        "";
+
+      if (!file) {
+        return;
+      }
+
+      if (
+        !allowedTypes.includes(
+          file.type
+        )
+      ) {
+        setError(
+          "Only JPG, PNG and WEBP images are allowed."
+        );
+
+        return;
+      }
+
+      if (
+        file.size >
+        MAX_FILE_SIZE
+      ) {
+        setError(
+          "Logo image must be 5 MB or smaller."
+        );
+
+        return;
+      }
+
+      setSelectedLogo(
+        file
+      );
+
       setError("");
+      setSuccess("");
+    };
+
+  const handleLogoUpload =
+    async () => {
+      if (!selectedLogo) {
+        setError(
+          "Please choose a logo first."
+        );
+
+        return;
+      }
+
+      try {
+        setUploadingLogo(
+          true
+        );
+
+        setError("");
+        setSuccess("");
+
+        const result =
+          await uploadBusinessLogo(
+            selectedLogo
+          );
+
+        setForm(
+          (current) => ({
+            ...current,
+
+            logoUrl:
+              result.logoUrl ||
+              "",
+
+            logoPublicId:
+              result.logoPublicId ||
+              "",
+          })
+        );
+
+        setSelectedLogo(
+          null
+        );
+
+        setSuccess(
+          "Business logo uploaded successfully."
+        );
+
+        /*
+         * Immediately update public
+         * components such as Footer.
+         */
+        await refreshSettings();
+      } catch (error) {
+        console.error(error);
+
+        setError(
+          error.response?.data
+            ?.message ||
+            "Unable to upload logo."
+        );
+      } finally {
+        setUploadingLogo(
+          false
+        );
+      }
+    };
+
+  const handleLogoDelete =
+    async () => {
+      const confirmed =
+        window.confirm(
+          "Remove the current business logo?"
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        setDeletingLogo(
+          true
+        );
+
+        setError("");
+        setSuccess("");
+
+        await deleteBusinessLogo();
+
+        setForm(
+          (current) => ({
+            ...current,
+
+            logoUrl: "",
+            logoPublicId: "",
+          })
+        );
+
+        setSelectedLogo(
+          null
+        );
+
+        setSuccess(
+          "Business logo removed successfully."
+        );
+
+        await refreshSettings();
+      } catch (error) {
+        console.error(error);
+
+        setError(
+          error.response?.data
+            ?.message ||
+            "Unable to remove logo."
+        );
+      } finally {
+        setDeletingLogo(
+          false
+        );
+      }
     };
 
   const handleSubmit =
@@ -221,6 +455,12 @@ export default function AdminSettings() {
         setError("");
         setSuccess("");
 
+        /*
+         * Logo is deliberately NOT
+         * included here.
+         * It has dedicated media
+         * endpoints.
+         */
         const updated =
           await updateAdminSettings({
             businessName:
@@ -259,9 +499,6 @@ export default function AdminSettings() {
             mapUrl:
               form.mapUrl.trim(),
 
-            logoUrl:
-              form.logoUrl.trim(),
-
             deliveryNote:
               form.deliveryNote.trim(),
 
@@ -278,24 +515,41 @@ export default function AdminSettings() {
               form.socialLinks,
           });
 
-        setForm({
-          ...initialSettings,
-          ...updated,
+        setForm(
+          (current) => ({
+            ...initialSettings,
+            ...updated,
 
-          openingHours: {
-            ...initialSettings.openingHours,
-            ...updated.openingHours,
-          },
+            /*
+             * Preserve media fields
+             * from the protected
+             * settings response.
+             */
+            logoUrl:
+              updated.logoUrl ??
+              current.logoUrl,
 
-          socialLinks: {
-            ...initialSettings.socialLinks,
-            ...updated.socialLinks,
-          },
-        });
+            logoPublicId:
+              updated.logoPublicId ??
+              current.logoPublicId,
+
+            openingHours: {
+              ...initialSettings.openingHours,
+              ...updated.openingHours,
+            },
+
+            socialLinks: {
+              ...initialSettings.socialLinks,
+              ...updated.socialLinks,
+            },
+          })
+        );
 
         setSuccess(
           "Business settings saved successfully."
         );
+
+        await refreshSettings();
 
         window.scrollTo({
           top: 0,
@@ -329,7 +583,8 @@ export default function AdminSettings() {
         />
 
         <p className="mt-4 text-sm text-gray-500">
-          Loading business settings...
+          Loading business
+          settings...
         </p>
 
       </div>
@@ -353,9 +608,8 @@ export default function AdminSettings() {
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
             Manage the company
-            information used across
-            R&J AC's website and
-            business operations.
+            information and branding
+            used across R&J AC.
           </p>
 
         </div>
@@ -401,6 +655,7 @@ export default function AdminSettings() {
         className="mt-8 space-y-6"
       >
 
+        {/* Identity */}
         <SettingsCard
           icon={Building2}
           title="Business Identity"
@@ -470,37 +725,220 @@ export default function AdminSettings() {
 
           </div>
 
-          <div className="mt-5">
+        </SettingsCard>
 
-            <Field label="Logo URL">
+        {/* Logo */}
+        <SettingsCard
+          icon={ImagePlus}
+          title="Business Logo"
+          description="Upload the logo used across the public website."
+        >
+
+          <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+
+            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-[#F7FAFC]">
+
+              <div className="flex aspect-square items-center justify-center p-5">
+
+                {previewUrl ? (
+                  <img
+                    src={
+                      previewUrl
+                    }
+                    alt="Selected logo preview"
+                    className="max-h-full max-w-full object-contain"
+                  />
+                ) : form.logoUrl ? (
+                  <img
+                    src={
+                      form.logoUrl
+                    }
+                    alt={
+                      form.businessName
+                    }
+                    className="max-h-full max-w-full object-contain"
+                  />
+                ) : (
+                  <div className="text-center">
+
+                    <ImagePlus
+                      size={42}
+                      className="mx-auto text-gray-300"
+                    />
+
+                    <p className="mt-3 text-sm font-semibold text-gray-400">
+                      No logo uploaded
+                    </p>
+
+                  </div>
+                )}
+
+              </div>
+
+              {previewUrl && (
+                <div className="border-t border-gray-200 bg-[#EAF6FF] px-4 py-3 text-center text-xs font-bold text-[#1687D9]">
+                  New logo preview
+                </div>
+              )}
+
+            </div>
+
+            <div>
 
               <input
-                name="logoUrl"
-                value={
-                  form.logoUrl
+                ref={
+                  fileInputRef
                 }
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
                 onChange={
-                  handleChange
+                  handleLogoSelection
                 }
-                placeholder="https://..."
-                className={
-                  inputClass
-                }
+                className="hidden"
               />
 
-            </Field>
+              <div className="rounded-2xl border-2 border-dashed border-gray-200 p-6">
 
-            <p className="mt-2 text-xs text-gray-400">
-              We will replace this
-              with direct image upload
-              when Cloudinary is
-              connected.
-            </p>
+                <UploadCloud
+                  size={28}
+                  className="text-[#1687D9]"
+                />
+
+                <h3 className="mt-4 font-bold text-[#0B1F33]">
+                  Upload Company
+                  Logo
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-gray-500">
+                  Choose a clear JPG,
+                  PNG or WEBP image.
+                  Maximum size is
+                  5 MB.
+                </p>
+
+                {selectedLogo && (
+                  <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-[#EAF6FF] p-3">
+
+                    <div className="min-w-0">
+
+                      <p className="truncate text-sm font-semibold text-[#0B1F33]">
+                        {
+                          selectedLogo.name
+                        }
+                      </p>
+
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {formatFileSize(
+                          selectedLogo.size
+                        )}
+                      </p>
+
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedLogo(
+                          null
+                        )
+                      }
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-gray-500"
+                    >
+                      <X
+                        size={16}
+                      />
+                    </button>
+
+                  </div>
+                )}
+
+                <div className="mt-5 flex flex-wrap gap-3">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      fileInputRef
+                        .current
+                        ?.click()
+                    }
+                    className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-[#0B1F33]"
+                  >
+                    <ImagePlus
+                      size={17}
+                    />
+
+                    {form.logoUrl
+                      ? "Choose New Logo"
+                      : "Choose Logo"}
+                  </button>
+
+                  {selectedLogo && (
+                    <button
+                      type="button"
+                      disabled={
+                        uploadingLogo
+                      }
+                      onClick={
+                        handleLogoUpload
+                      }
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#1687D9] px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                    >
+                      {uploadingLogo ? (
+                        <Loader2
+                          size={17}
+                          className="animate-spin"
+                        />
+                      ) : (
+                        <UploadCloud
+                          size={17}
+                        />
+                      )}
+
+                      {uploadingLogo
+                        ? "Uploading..."
+                        : form.logoUrl
+                          ? "Replace Logo"
+                          : "Upload Logo"}
+                    </button>
+                  )}
+
+                  {form.logoUrl && (
+                    <button
+                      type="button"
+                      disabled={
+                        deletingLogo
+                      }
+                      onClick={
+                        handleLogoDelete
+                      }
+                      className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600 disabled:opacity-60"
+                    >
+                      {deletingLogo ? (
+                        <Loader2
+                          size={17}
+                          className="animate-spin"
+                        />
+                      ) : (
+                        <Trash2
+                          size={17}
+                        />
+                      )}
+
+                      Remove Logo
+                    </button>
+                  )}
+
+                </div>
+
+              </div>
+
+            </div>
 
           </div>
 
         </SettingsCard>
 
+        {/* Contacts */}
         <SettingsCard
           icon={Phone}
           title="Contact Information"
@@ -586,6 +1024,7 @@ export default function AdminSettings() {
 
         </SettingsCard>
 
+        {/* Location */}
         <SettingsCard
           icon={MapPin}
           title="Business Location"
@@ -688,6 +1127,7 @@ export default function AdminSettings() {
 
         </SettingsCard>
 
+        {/* Opening Hours */}
         <SettingsCard
           icon={Clock3}
           title="Opening Hours"
@@ -732,6 +1172,7 @@ export default function AdminSettings() {
 
         </SettingsCard>
 
+        {/* Social Media */}
         <SettingsCard
           icon={Share2}
           title="Social Media"
@@ -820,10 +1261,11 @@ export default function AdminSettings() {
 
         </SettingsCard>
 
+        {/* Customer Info */}
         <SettingsCard
           icon={MessageCircle}
           title="Customer Information"
-          description="Messages shown to customers during ordering and service booking."
+          description="Messages shown during ordering and service booking."
         >
 
           <Field label="Delivery Information">
@@ -897,7 +1339,16 @@ export default function AdminSettings() {
           }
           className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1687D9] px-6 py-4 font-bold text-white transition hover:bg-[#1176BF] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Save size={18} />
+          {saving ? (
+            <Loader2
+              size={18}
+              className="animate-spin"
+            />
+          ) : (
+            <Save
+              size={18}
+            />
+          )}
 
           {saving
             ? "Saving Settings..."
@@ -926,7 +1377,9 @@ function SettingsCard({
 
         {Icon && (
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EAF6FF] text-[#1687D9]">
-            <Icon size={19} />
+            <Icon
+              size={19}
+            />
           </div>
         )}
 
@@ -976,4 +1429,22 @@ function Field({
 
     </label>
   );
+}
+
+function formatFileSize(
+  bytes
+) {
+  if (
+    bytes <
+    1024 * 1024
+  ) {
+    return `${Math.round(
+      bytes / 1024
+    )} KB`;
+  }
+
+  return `${(
+    bytes /
+    (1024 * 1024)
+  ).toFixed(1)} MB`;
 }

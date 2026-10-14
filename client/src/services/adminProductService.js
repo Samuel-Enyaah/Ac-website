@@ -1,5 +1,8 @@
 import api from "./api";
 
+/*
+ * PRODUCT LIST
+ */
 export async function getAdminProducts(
   params = {}
 ) {
@@ -14,6 +17,9 @@ export async function getAdminProducts(
   return response.data;
 }
 
+/*
+ * SINGLE PRODUCT
+ */
 export async function getAdminProduct(
   productId
 ) {
@@ -25,40 +31,131 @@ export async function getAdminProduct(
   return response.data.product;
 }
 
+/*
+ * Backward-compatible alias
+ * for older components.
+ */
+export async function getAdminProductById(
+  productId
+) {
+  return getAdminProduct(
+    productId
+  );
+}
+
+/*
+ * CREATE PRODUCT
+ */
 export async function createAdminProduct(
-  data
+  payload
 ) {
   const response =
     await api.post(
       "/admin/products",
-      data
+      payload
     );
 
   return response.data.product;
 }
 
+/*
+ * UPDATE PRODUCT
+ */
 export async function updateAdminProduct(
   productId,
-  data
+  payload
 ) {
   const response =
     await api.patch(
       `/admin/products/${productId}`,
-      data
+      payload
     );
 
   return response.data.product;
 }
 
-export async function adjustAdminInventory(
+/*
+ * INVENTORY
+ */
+export async function adjustProductInventory(
   productId,
-  data
+  payload
 ) {
   const response =
     await api.patch(
       `/admin/products/${productId}/inventory`,
-      data
+      payload
     );
 
-  return response.data.product;
+  return response.data;
+}
+
+/*
+ * IMPORTANT:
+ * Existing AdminInventory.jsx uses
+ * adjustAdminInventory.
+ *
+ * Keep this alias so we do not break
+ * the inventory system.
+ */
+export async function adjustAdminInventory(
+  productId,
+  payload
+) {
+  return adjustProductInventory(
+    productId,
+    payload
+  );
+}
+
+/*
+ * CLOUDINARY PRODUCT IMAGES
+ */
+export async function uploadAdminProductImages(
+  productId,
+  files
+) {
+  const formData =
+    new FormData();
+
+  files.forEach((file) => {
+    formData.append(
+      "images",
+      file
+    );
+  });
+
+  /*
+   * Do not manually set
+   * Content-Type.
+   * The browser automatically adds
+   * the multipart boundary.
+   */
+  const response =
+    await api.post(
+      `/admin/products/${productId}/images`,
+      formData
+    );
+
+  return response.data;
+}
+
+/*
+ * DELETE CLOUDINARY PRODUCT IMAGE
+ */
+export async function deleteAdminProductImage(
+  productId,
+  publicId
+) {
+  const response =
+    await api.delete(
+      `/admin/products/${productId}/images`,
+      {
+        data: {
+          publicId,
+        },
+      }
+    );
+
+  return response.data;
 }

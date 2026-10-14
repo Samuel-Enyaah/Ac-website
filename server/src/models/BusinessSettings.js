@@ -5,43 +5,44 @@ const openingHoursSchema =
     {
       monday: {
         type: String,
-        default:
-          "8:00 AM - 5:00 PM",
+        default: "8:00 AM - 5:00 PM",
+        trim: true,
       },
 
       tuesday: {
         type: String,
-        default:
-          "8:00 AM - 5:00 PM",
+        default: "8:00 AM - 5:00 PM",
+        trim: true,
       },
 
       wednesday: {
         type: String,
-        default:
-          "8:00 AM - 5:00 PM",
+        default: "8:00 AM - 5:00 PM",
+        trim: true,
       },
 
       thursday: {
         type: String,
-        default:
-          "8:00 AM - 5:00 PM",
+        default: "8:00 AM - 5:00 PM",
+        trim: true,
       },
 
       friday: {
         type: String,
-        default:
-          "8:00 AM - 5:00 PM",
+        default: "8:00 AM - 5:00 PM",
+        trim: true,
       },
 
       saturday: {
         type: String,
-        default:
-          "9:00 AM - 3:00 PM",
+        default: "9:00 AM - 3:00 PM",
+        trim: true,
       },
 
       sunday: {
         type: String,
         default: "Closed",
+        trim: true,
       },
     },
     {
@@ -197,7 +198,22 @@ const businessSettingsSchema =
         trim: true,
       },
 
+      /*
+       * Public image URL used by
+       * the frontend.
+       */
       logoUrl: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+
+      /*
+       * Cloudinary identifier.
+       * Never expose this through
+       * the public settings API.
+       */
+      logoPublicId: {
         type: String,
         default: "",
         trim: true,
