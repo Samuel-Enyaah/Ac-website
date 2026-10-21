@@ -1,91 +1,68 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ArrowRight,
-  ShoppingCart,
-} from "lucide-react";
-
-import { useCart } from "../../context/CartContext";
+import { ShoppingCart, Check } from "lucide-react";
+import { useCart } from "../../context/CartState";
 import ProductVisual from "./ProductVisual";
-
-export default function ProductCard({
-  product,
-}) {
-  const { addToCart } = useCart();
-
+import { PriceDisplay } from "../ui/Storefront";
+export default function ProductCard({ product }) {
+  const { addToCart, cartItems } = useCart();
+  const [added, setAdded] = useState(false);
+  const remaining =
+    product.stock -
+    (cartItems.find((item) => item._id === product._id)?.quantity || 0);
   return (
-    <article className="group overflow-hidden rounded-3xl border border-gray-200 bg-white transition duration-300 hover:-translate-y-1 hover:shadow-xl">
+    <article className="product-card">
       <Link
         to={`/shop/${product.slug}`}
-        className="relative flex h-56 items-center justify-center bg-gradient-to-br from-[#EAF6FF] to-[#F7FBFF] p-7"
+        className="product-image"
+        aria-label={`View ${product.name}`}
       >
-        {product.featured && (
-          <span className="absolute left-4 top-4 rounded-full bg-[#0B1F33] px-3 py-1.5 text-xs font-bold text-white">
-            Featured
-          </span>
+        <ProductVisual product={product} iconSize={64} />
+        {Number(product.oldPrice) > Number(product.price) ? (
+          <span className="badge absolute left-4 top-4">Sale</span>
+        ) : (
+          product.featured && (
+            <span className="badge absolute left-4 top-4">Featured</span>
+          )
         )}
-
-        <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-3xl bg-white text-[#1687D9] shadow-lg transition group-hover:scale-105">
-          <ProductVisual
-            product={product}
-            iconSize={48}
-          />
-        </div>
       </Link>
-
-      <div className="p-6">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#1687D9]">
+      <div className="product-body">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-[#637381]">
           {product.category}
+          {product.brand ? ` / ${product.brand}` : ""}
         </p>
-
-        <Link
-          to={`/shop/${product.slug}`}
-          className="mt-2 block text-xl font-bold text-[#0B1F33] transition hover:text-[#1687D9]"
-        >
-          {product.name}
-        </Link>
-
-        <p className="mt-3 line-clamp-2 text-sm leading-6 text-gray-600">
-          {product.shortDescription}
+        <h3>
+          <Link to={`/shop/${product.slug}`}>{product.name}</Link>
+        </h3>
+        <PriceDisplay price={product.price} oldPrice={product.oldPrice} />
+        <p className="text-xs text-[#637381]">
+          {product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}
         </p>
-
-        <div className="mt-5 flex items-end gap-3">
-          <span className="text-xl font-extrabold text-[#0B1F33]">
-            GH₵{" "}
-            {Number(
-              product.price
-            ).toLocaleString()}
-          </span>
-
-          {product.oldPrice && (
-            <span className="pb-0.5 text-sm text-gray-400 line-through">
-              GH₵{" "}
-              {Number(
-                product.oldPrice
-              ).toLocaleString()}
-            </span>
-          )}
-        </div>
-
-        <div className="mt-6 grid grid-cols-[1fr_auto] gap-3">
-          <Link
-            to={`/shop/${product.slug}`}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-[#0B1F33] transition hover:border-[#1687D9] hover:text-[#1687D9]"
-          >
+        <div className="mt-auto flex items-center justify-between gap-3 pt-3">
+          <Link className="text-link" to={`/shop/${product.slug}`}>
             View Details
-            <ArrowRight size={16} />
           </Link>
-
           <button
             type="button"
-            disabled={product.stock < 1}
-            onClick={() =>
-              addToCart(product)
-            }
-            className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1687D9] text-white transition hover:bg-[#1176BF] disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="icon-button bg-[#EAF6FF] text-[#106eaf]"
+            aria-label={`Add ${product.name} to cart`}
+            disabled={remaining < 1}
+            onClick={() => {
+              addToCart(product);
+              setAdded(true);
+            }}
           >
-            <ShoppingCart size={19} />
+            {added ? <Check size={20} /> : <ShoppingCart size={20} />}
           </button>
         </div>
+        {added && (
+          <p role="status" className="text-xs text-[#106eaf]">
+            Added to cart.{" "}
+            <Link className="underline" to="/cart">
+              View cart
+            </Link>
+          </p>
+        )}
       </div>
     </article>
   );

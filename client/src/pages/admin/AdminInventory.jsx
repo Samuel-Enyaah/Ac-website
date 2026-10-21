@@ -1,15 +1,7 @@
-import {
-  useEffect,
-  useState,
-} from "react";
+import { useSearchParams } from "react-router-dom";
+import { useRef, useCallback, useEffect, useState } from "react";
 
-import {
-  AlertTriangle,
-  Boxes,
-  Minus,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
+import { AlertTriangle, Boxes, Minus, Plus, RefreshCw } from "lucide-react";
 
 import {
   adjustAdminInventory,
@@ -17,136 +9,94 @@ import {
 } from "../../services/adminProductService";
 
 export default function AdminInventory() {
-  const [
-    products,
-    setProducts,
-  ] = useState([]);
+  const [params, setParams] = useSearchParams();
+  const lowOnly = params.get("stock") === "low";
+  const search = params.get("search") || "";
+  const [products, setProducts] = useState([]);
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
+  const [loading, setLoading] = useState(true);
 
-  const [
-    error,
-    setError,
-  ] = useState("");
+  const [error, setError] = useState("");
 
-  const [
-    selectedId,
-    setSelectedId,
-  ] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
 
-  const [
-    operation,
-    setOperation,
-  ] = useState(
-    "increase"
-  );
+  const [operation, setOperation] = useState("increase");
 
-  const [
-    quantity,
-    setQuantity,
-  ] = useState("1");
+  const [quantity, setQuantity] = useState("1");
 
-  const [
-    reason,
-    setReason,
-  ] = useState("");
+  const [reason, setReason] = useState("");
 
-  const [
-    saving,
-    setSaving,
-  ] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const loadProducts =
-    async () => {
-      try {
-        setLoading(true);
+  const requestVersion = useRef(0);
+  const loadProducts = useCallback(() => {
+    const version = ++requestVersion.current;
+    return getAdminProducts({
+      limit: 100,
+      search,
+      stock: lowOnly ? "attention" : undefined,
+      active: lowOnly ? true : undefined,
+    })
+      .then((result) => {
+        if (version !== requestVersion.current) return;
+
         setError("");
 
-        const result =
-          await getAdminProducts({
-            limit: 100,
-          });
+        setProducts(result.products || []);
+      })
+      .catch((error) => {
+        if (version !== requestVersion.current) return;
 
-        setProducts(
-          result.products || []
-        );
-      } catch (error) {
-        setError(
-          error.response?.data
-            ?.message ||
-            "Unable to load inventory."
-        );
-      } finally {
+        setError(error.response?.data?.message || "Unable to load inventory.");
+      })
+      .finally(() => {
+        if (version !== requestVersion.current) return;
+
         setLoading(false);
-      }
-    };
+      });
+  }, [search, lowOnly]);
 
   useEffect(() => {
     loadProducts();
-  }, []);
-
-  const adjustStock =
-    async (
-      productId
-    ) => {
-      try {
-        setSaving(true);
-        setError("");
-
-        const updated =
-          await adjustAdminInventory(
-            productId,
-            {
-              operation,
-
-              quantity:
-                Number(
-                  quantity
-                ),
-
-              reason:
-                reason.trim(),
-            }
-          );
-
-        setProducts(
-          (current) =>
-            current.map(
-              (product) =>
-                product._id ===
-                updated._id
-                  ? updated
-                  : product
-            )
-        );
-
-        setSelectedId(null);
-        setQuantity("1");
-        setReason("");
-        setOperation(
-          "increase"
-        );
-      } catch (error) {
-        setError(
-          error.response?.data
-            ?.message ||
-            "Unable to update stock."
-        );
-      } finally {
-        setSaving(false);
-      }
+    return () => {
+      requestVersion.current += 1;
     };
+  }, [loadProducts]);
+
+  const adjustStock = async (productId) => {
+    try {
+      setSaving(true);
+      setError("");
+
+      const updated = await adjustAdminInventory(productId, {
+        operation,
+
+        quantity: Number(quantity),
+
+        reason: reason.trim(),
+      });
+
+      setProducts((current) =>
+        current.map((product) =>
+          product._id === updated._id ? updated : product,
+        ),
+      );
+
+      setSelectedId(null);
+      setQuantity("1");
+      setReason("");
+      setOperation("increase");
+    } catch (error) {
+      setError(error.response?.data?.message || "Unable to update stock.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="space-y-7">
-
-      <section className="flex items-end justify-between gap-5">
-
+    <div className="ops-page space-y-7">
+      <section className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-end">
         <div>
-
           <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#1687D9]">
             Inventory
           </p>
@@ -156,26 +106,21 @@ export default function AdminInventory() {
           </h1>
 
           <p className="mt-2 text-sm text-gray-500">
-            Monitor and adjust
-            product quantities.
+            Monitor and adjust product quantities.
           </p>
-
         </div>
 
         <button
           type="button"
-          onClick={
-            loadProducts
-          }
+          onClick={() => {
+            setLoading(true);
+            loadProducts();
+          }}
           className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold"
         >
-          <RefreshCw
-            size={17}
-          />
-
+          <RefreshCw size={17} />
           Refresh
         </button>
-
       </section>
 
       {error && (
@@ -190,210 +135,147 @@ export default function AdminInventory() {
         </div>
       ) : (
         <section className="space-y-4">
-
-          {products.map(
-            (product) => (
+          <div className="flex flex-wrap gap-3 items-center">
+            <label className="flex min-h-11 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={lowOnly}
+                onChange={(e) => {
+                  const next = new URLSearchParams(params);
+                  e.target.checked
+                    ? next.set("stock", "low")
+                    : next.delete("stock");
+                  setParams(next);
+                }}
+              />{" "}
+              Low stock only
+            </label>
+            {search && (
+              <button
+                className="ops-button secondary"
+                onClick={() => setParams({})}
+              >
+                Clear product filter
+              </button>
+            )}
+          </div>
+          {products
+            .filter(
+              (p) =>
+                (!lowOnly || (p.active && p.stock <= 5)) &&
+                (!search ||
+                  p.name.toLowerCase().includes(search.toLowerCase())),
+            )
+            .map((product) => (
               <div
-                key={
-                  product._id
-                }
+                key={product._id}
                 className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
               >
-
                 <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-
                   <div className="flex items-center gap-4">
-
                     <div
                       className={`flex h-12 w-12 items-center justify-center rounded-xl ${
-                        product.stock ===
-                        0
+                        product.stock === 0
                           ? "bg-red-50 text-red-500"
-                          : product.stock <=
-                              5
+                          : product.stock <= 5
                             ? "bg-orange-50 text-orange-500"
                             : "bg-[#EAF6FF] text-[#1687D9]"
                       }`}
                     >
-                      {product.stock <=
-                      5 ? (
-                        <AlertTriangle
-                          size={21}
-                        />
+                      {product.stock <= 5 ? (
+                        <AlertTriangle size={21} />
                       ) : (
-                        <Boxes
-                          size={21}
-                        />
+                        <Boxes size={21} />
                       )}
                     </div>
 
                     <div>
-
-                      <p className="font-bold text-[#0B1F33]">
-                        {
-                          product.name
-                        }
-                      </p>
+                      <p className="font-bold text-[#0B1F33]">{product.name}</p>
 
                       <p className="mt-1 text-xs text-gray-500">
-                        {
-                          product.category
-                        }
+                        {product.category}
                       </p>
-
                     </div>
-
                   </div>
 
                   <div className="flex items-center gap-4">
-
                     <div className="text-right">
-
-                      <p className="text-xs text-gray-400">
-                        Current Stock
-                      </p>
+                      <p className="text-xs text-gray-400">Current Stock</p>
 
                       <p className="text-2xl font-black text-[#0B1F33]">
-                        {
-                          product.stock
-                        }
+                        {product.stock}
                       </p>
-
                     </div>
 
                     <button
                       type="button"
                       onClick={() =>
                         setSelectedId(
-                          selectedId ===
-                            product._id
-                            ? null
-                            : product._id
+                          selectedId === product._id ? null : product._id,
                         )
                       }
                       className="rounded-xl bg-[#1687D9] px-4 py-3 text-sm font-bold text-white"
                     >
                       Adjust
                     </button>
-
                   </div>
-
                 </div>
 
-                {selectedId ===
-                  product._id && (
+                {selectedId === product._id && (
                   <div className="mt-5 border-t border-gray-100 pt-5">
-
                     <div className="grid gap-4 lg:grid-cols-[180px_150px_1fr_auto]">
-
                       <select
-                        value={
-                          operation
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setOperation(
-                            event
-                              .target
-                              .value
-                          )
-                        }
+                        aria-label="Inventory operation"
+                        value={operation}
+                        onChange={(event) => setOperation(event.target.value)}
                         className="rounded-xl border border-gray-200 px-4 py-3 text-sm"
                       >
-                        <option value="increase">
-                          Add Stock
-                        </option>
+                        <option value="increase">Add Stock</option>
 
-                        <option value="decrease">
-                          Remove Stock
-                        </option>
+                        <option value="decrease">Remove Stock</option>
 
-                        <option value="set">
-                          Set Exact Stock
-                        </option>
+                        <option value="set">Set Exact Stock</option>
                       </select>
 
                       <input
                         type="number"
                         min="0"
-                        value={
-                          quantity
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setQuantity(
-                            event
-                              .target
-                              .value
-                          )
-                        }
+                        value={quantity}
+                        onChange={(event) => setQuantity(event.target.value)}
                         className="rounded-xl border border-gray-200 px-4 py-3 text-sm"
+                        aria-label="Quantity"
                         placeholder="Quantity"
                       />
 
                       <input
-                        value={
-                          reason
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setReason(
-                            event
-                              .target
-                              .value
-                          )
-                        }
+                        value={reason}
+                        onChange={(event) => setReason(event.target.value)}
                         className="rounded-xl border border-gray-200 px-4 py-3 text-sm"
+                        aria-label="Adjustment reason"
                         placeholder="Reason, e.g. new delivery"
                       />
 
                       <button
                         type="button"
-                        disabled={
-                          saving
-                        }
-                        onClick={() =>
-                          adjustStock(
-                            product._id
-                          )
-                        }
+                        disabled={saving}
+                        onClick={() => adjustStock(product._id)}
                         className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0B1F33] px-5 py-3 text-sm font-bold text-white disabled:opacity-60"
                       >
-                        {operation ===
-                        "decrease" ? (
-                          <Minus
-                            size={
-                              16
-                            }
-                          />
+                        {operation === "decrease" ? (
+                          <Minus size={16} />
                         ) : (
-                          <Plus
-                            size={
-                              16
-                            }
-                          />
+                          <Plus size={16} />
                         )}
 
-                        {saving
-                          ? "Saving..."
-                          : "Update"}
+                        {saving ? "Saving..." : "Update"}
                       </button>
-
                     </div>
-
                   </div>
                 )}
-
               </div>
-            )
-          )}
-
+            ))}
         </section>
       )}
-
     </div>
   );
 }

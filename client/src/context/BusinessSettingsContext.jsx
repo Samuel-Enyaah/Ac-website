@@ -1,22 +1,13 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 
-import {
-  getPublicSettings,
-} from "../services/publicSettingsService";
+import { getPublicSettings } from "../services/publicSettingsService";
 
 const defaultSettings = {
   businessName: "R&J AC",
 
-  legalName:
-    "R&J AC ACCESSARIES COM. LTD",
+  legalName: "R&J AC ACCESSARIES COM. LTD",
 
-  slogan:
-    "Cooling Solutions You Can Rely On.",
+  slogan: "Cooling Solutions You Can Rely On.",
 
   primaryPhone: "",
   secondaryPhone: "",
@@ -32,23 +23,17 @@ const defaultSettings = {
   logoUrl: "",
 
   openingHours: {
-    monday:
-      "8:00 AM - 5:00 PM",
+    monday: "8:00 AM - 5:00 PM",
 
-    tuesday:
-      "8:00 AM - 5:00 PM",
+    tuesday: "8:00 AM - 5:00 PM",
 
-    wednesday:
-      "8:00 AM - 5:00 PM",
+    wednesday: "8:00 AM - 5:00 PM",
 
-    thursday:
-      "8:00 AM - 5:00 PM",
+    thursday: "8:00 AM - 5:00 PM",
 
-    friday:
-      "8:00 AM - 5:00 PM",
+    friday: "8:00 AM - 5:00 PM",
 
-    saturday:
-      "9:00 AM - 3:00 PM",
+    saturday: "9:00 AM - 3:00 PM",
 
     sunday: "Closed",
   },
@@ -63,44 +48,28 @@ const defaultSettings = {
   deliveryNote:
     "Delivery arrangements and charges are confirmed before dispatch.",
 
-  serviceCoverage:
-    "Residential and commercial air-conditioning services.",
+  serviceCoverage: "Residential and commercial air-conditioning services.",
 
-  bookingNote:
-    "Service requests are reviewed before confirmation.",
+  bookingNote: "Service requests are reviewed before confirmation.",
 };
 
-const BusinessSettingsContext =
-  createContext(null);
+import { BusinessSettingsContext } from "./BusinessSettingsState";
 
-export function BusinessSettingsProvider({
-  children,
-}) {
-  const [
-    settings,
-    setSettings,
-  ] = useState(
-    defaultSettings
-  );
+export function BusinessSettingsProvider({ children }) {
+  const [settings, setSettings] = useState(defaultSettings);
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
+  const [loading, setLoading] = useState(true);
 
-  const [
-    error,
-    setError,
-  ] = useState("");
+  const [error, setError] = useState("");
 
-  const loadSettings =
-    async () => {
-      try {
-        setLoading(true);
+  const requestVersion = useRef(0);
+  const loadSettings = useCallback(() => {
+    const version = ++requestVersion.current;
+    return getPublicSettings()
+      .then((data) => {
+        if (version !== requestVersion.current) return;
+
         setError("");
-
-        const data =
-          await getPublicSettings();
 
         const mergedSettings = {
           ...defaultSettings,
@@ -108,47 +77,37 @@ export function BusinessSettingsProvider({
 
           openingHours: {
             ...defaultSettings.openingHours,
-            ...(data?.openingHours ||
-              {}),
+            ...(data?.openingHours || {}),
           },
 
           socialLinks: {
             ...defaultSettings.socialLinks,
-            ...(data?.socialLinks ||
-              {}),
+            ...(data?.socialLinks || {}),
           },
         };
 
-        setSettings(
-          mergedSettings
-        );
+        setSettings(mergedSettings);
+      })
+      .catch((error) => {
+        if (version !== requestVersion.current) return;
 
-        if (
-          mergedSettings.businessName
-        ) {
-          document.title =
-            `${mergedSettings.businessName} | Air Conditioning Solutions`;
-        }
-      } catch (error) {
-        console.error(
-          "Unable to load public business settings:",
-          error
-        );
+        console.error("Unable to load public business settings:", error);
 
-        setError(
-          "Unable to load business settings."
-        );
+        setError("Unable to load business settings.");
+      })
+      .finally(() => {
+        if (version !== requestVersion.current) return;
 
-        document.title =
-          "R&J AC | Air Conditioning Solutions";
-      } finally {
         setLoading(false);
-      }
-    };
+      });
+  }, []);
 
   useEffect(() => {
     loadSettings();
-  }, []);
+    return () => {
+      requestVersion.current += 1;
+    };
+  }, [loadSettings]);
 
   return (
     <BusinessSettingsContext.Provider
@@ -156,26 +115,10 @@ export function BusinessSettingsProvider({
         settings,
         loading,
         error,
-        refreshSettings:
-          loadSettings,
+        refreshSettings: loadSettings,
       }}
     >
       {children}
     </BusinessSettingsContext.Provider>
   );
-}
-
-export function useBusinessSettings() {
-  const context =
-    useContext(
-      BusinessSettingsContext
-    );
-
-  if (!context) {
-    throw new Error(
-      "useBusinessSettings must be used inside BusinessSettingsProvider"
-    );
-  }
-
-  return context;
 }

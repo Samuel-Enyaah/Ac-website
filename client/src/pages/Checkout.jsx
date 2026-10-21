@@ -1,1012 +1,412 @@
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { CheckCircle2, Phone, MessageCircle } from "lucide-react";
+import { useCart } from "../context/CartState";
+import { useBusinessSettings } from "../context/BusinessSettingsState";
 import {
-  useMemo,
-  useState,
-} from "react";
-
-import {
-  Link,
-} from "react-router-dom";
-
-import {
-  CheckCircle2,
-  ChevronLeft,
-  MapPin,
-  PackageCheck,
-  ShoppingBag,
-  Truck,
-  Wrench,
-} from "lucide-react";
-
-import {
-  useCart,
-} from "../context/CartContext";
-
-import {
-  useBusinessSettings,
-} from "../context/BusinessSettingsContext";
-
+  createOrder,
+  pendingCheckoutForm,
+  pendingOrderData,
+} from "../services/orderService";
+import { contactErrors, focusFirstError } from "../utils/formValidation";
+import { phoneHref, whatsappHref } from "../utils/businessLinks";
+import usePageMeta from "../hooks/usePageMeta";
 import ProductVisual from "../components/shop/ProductVisual";
-
-import * as orderService from "../services/orderService";
-
-const initialForm = {
+import {
+  Container,
+  PageHero,
+  Button,
+  FormControl,
+  FormSection,
+  PriceDisplay,
+  Alert,
+  EmptyState,
+} from "../components/ui/Storefront";
+const initial = {
   fullName: "",
   phone: "",
   email: "",
-
-  fulfillmentMethod:
-    "delivery",
-
+  fulfillmentMethod: "delivery",
   address: "",
   town: "",
   landmark: "",
-
-  installationRequired:
-    false,
-
-  installationAddress:
-    "",
-
-  paymentMethod:
-    "pay-on-delivery",
-
+  installationRequired: false,
+  installationAddress: "",
+  paymentMethod: "pay-on-delivery",
   notes: "",
 };
-
 export default function Checkout() {
-  const cart =
-    useCart();
-
-  const {
-    settings,
-  } = useBusinessSettings();
-
-  /*
-   * These fallbacks make this file
-   * compatible with the cart naming
-   * used during earlier phases.
-   */
-  const items =
-    cart.cartItems ||
-    cart.items ||
-    cart.cart ||
-    [];
-
-  const clearCart =
-    cart.clearCart ||
-    (() => {});
-
-  const [
-    form,
-    setForm,
-  ] = useState(initialForm);
-
-  const [
-    submitting,
-    setSubmitting,
-  ] = useState(false);
-
-  const [
-    error,
-    setError,
-  ] = useState("");
-
-  const [
-    completedOrder,
-    setCompletedOrder,
-  ] = useState(null);
-
-  const subtotal =
-    useMemo(
-      () =>
-        items.reduce(
-          (total, item) =>
-            total +
-            Number(
-              item.price || 0
-            ) *
-              Number(
-                item.quantity ||
-                  1
-              ),
-          0
-        ),
-      [items]
-    );
-
-  const handleChange =
-    (event) => {
-      const {
-        name,
-        value,
-        type,
-        checked,
-      } = event.target;
-
-      setForm(
-        (current) => ({
-          ...current,
-
-          [name]:
-            type ===
-            "checkbox"
-              ? checked
-              : value,
-        })
-      );
-
-      setError("");
-    };
-
-  const handleSubmit =
-    async (event) => {
-      event.preventDefault();
-
-      if (
-        items.length === 0
-      ) {
-        setError(
-          "Your cart is empty."
-        );
-
+  const cart = useCart();
+  const { settings } = useBusinessSettings();
+  const { refreshCart } = cart;
+  const [form, setForm] = useState(() => ({
+    ...initial,
+    ...pendingCheckoutForm(),
+  }));
+  const [pending, setPending] = useState(pendingOrderData);
+  const [errors, setErrors] = useState({});
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [order, setOrder] = useState(null);
+  const busy = useRef(false);
+  usePageMeta(
+    order ? "Order received" : "Checkout",
+    "Review your products, choose delivery or pickup, and send your order to R&J AC.",
+  );
+  useEffect(() => {
+    refreshCart();
+  }, [refreshCart]);
+  const change = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
+    setErrors((old) => ({ ...old, [name]: "" }));
+    setError("");
+  };
+  const field = (name, label, props = {}) => (
+    <FormControl
+      name={name}
+      label={label}
+      value={form[name]}
+      onChange={change}
+      error={errors[name]}
+      {...props}
+    />
+  );
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy.current) return;
+    if (!pending) {
+      const found = contactErrors(form);
+      if (form.fulfillmentMethod === "delivery") {
+        if (!form.address.trim())
+          found.address = "Enter your delivery address.";
+        if (!form.town.trim()) found.town = "Enter your town or area.";
+      }
+      if (form.installationRequired && !form.installationAddress.trim())
+        found.installationAddress = "Enter the installation address.";
+      setErrors(found);
+      if (Object.keys(found).length) {
+        setError("Please check the highlighted fields.");
+        focusFirstError(found);
         return;
       }
-
-      if (
-        !form.fullName.trim() ||
-        !form.phone.trim()
-      ) {
-        setError(
-          "Please enter your name and phone number."
-        );
-
-        return;
-      }
-
-      if (
-        form.fulfillmentMethod ===
-          "delivery" &&
-        (!form.address.trim() ||
-          !form.town.trim())
-      ) {
-        setError(
-          "Please provide your delivery address and town."
-        );
-
-        return;
-      }
-
-      if (
-        form.installationRequired &&
-        !form.installationAddress.trim()
-      ) {
-        setError(
-          "Please provide the installation address."
-        );
-
-        return;
-      }
-
-      try {
-        setSubmitting(true);
-        setError("");
-
-        const createOrder =
-          orderService.createOrder ||
-          orderService.submitOrder;
-
-        if (!createOrder) {
+    }
+    busy.current = true;
+    setSubmitting(true);
+    setError("");
+    try {
+      let payload = pending;
+      if (!payload) {
+        const fresh = await refreshCart();
+        if (!fresh)
           throw new Error(
-            "Order service function was not found."
+            "We could not verify availability. Please try again.",
           );
-        }
-
-        const payload = {
+        if (
+          !fresh.length ||
+          fresh.some(
+            (p) => p.unavailable || p.quantity > p.stock || p.stock < 1,
+          )
+        )
+          throw new Error(
+            "Your cart has changed. Review unavailable products or quantities before ordering.",
+          );
+        if (
+          fresh.some(
+            (p) =>
+              cart.cartItems.find((old) => old._id === p._id)?.price !==
+              p.price,
+          )
+        )
+          throw new Error(
+            "A product price has changed. Review the updated summary, then submit again.",
+          );
+        payload = {
           customer: {
-            fullName:
-              form.fullName.trim(),
-
-            phone:
-              form.phone.trim(),
-
-            email:
-              form.email.trim(),
+            fullName: form.fullName.trim(),
+            phone: form.phone.trim(),
+            email: form.email.trim(),
           },
-
-          items: items.map(
-            (item) => ({
-              product:
-                item._id ||
-                item.id,
-
-              quantity:
-                Number(
-                  item.quantity ||
-                    1
-                ),
-            })
-          ),
-
-          fulfillmentMethod:
-            form.fulfillmentMethod,
-
+          items: fresh.map((p) => ({ product: p._id, quantity: p.quantity })),
+          fulfillmentMethod: form.fulfillmentMethod,
           deliveryAddress:
-            form.fulfillmentMethod ===
-            "delivery"
+            form.fulfillmentMethod === "delivery"
               ? {
-                  address:
-                    form.address.trim(),
-
-                  town:
-                    form.town.trim(),
-
-                  landmark:
-                    form.landmark.trim(),
+                  address: form.address.trim(),
+                  town: form.town.trim(),
+                  landmark: form.landmark.trim(),
                 }
               : null,
-
-          installationRequired:
-            form.installationRequired,
-
-          installationAddress:
-            form.installationRequired
-              ? form.installationAddress.trim()
-              : "",
-
-          paymentMethod:
-            form.paymentMethod,
-
-          notes:
-            form.notes.trim(),
+          installationRequired: form.installationRequired,
+          installationAddress: form.installationRequired
+            ? form.installationAddress.trim()
+            : "",
+          paymentMethod: "pay-on-delivery",
+          notes: form.notes.trim(),
         };
-
-        const result =
-          await createOrder(
-            payload
-          );
-
-        const order =
-          result?.order ||
-          result?.data?.order ||
-          result;
-
-        setCompletedOrder(
-          order
-        );
-
-        clearCart();
-
-        window.scrollTo({
-          top: 0,
-          behavior: "smooth",
-        });
-      } catch (error) {
-        console.error(error);
-
-        setError(
-          error.response?.data
-            ?.message ||
-            error.message ||
-            "Unable to place your order. Please try again."
-        );
-      } finally {
-        setSubmitting(false);
       }
-    };
-
-  if (completedOrder) {
+      const result = await createOrder(payload);
+      setOrder(result);
+      setPending(null);
+      cart.clearCart();
+      window.scrollTo({ top: 0, behavior: "instant" });
+    } catch (err) {
+      setPending(pendingOrderData());
+      setError(
+        err.response?.data?.message ||
+          err.message ||
+          "Unable to place your order. Please retry.",
+      );
+    } finally {
+      busy.current = false;
+      setSubmitting(false);
+    }
+  };
+  if (order)
     return (
-      <main className="min-h-[70vh] bg-[#F8FAFC] px-5 py-16 sm:px-6">
-
-        <div className="mx-auto max-w-2xl rounded-3xl border border-gray-200 bg-white p-8 text-center shadow-sm sm:p-12">
-
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-green-600">
-            <CheckCircle2
-              size={34}
-            />
+      <Container className="section-rj">
+        <div className="receipt panel">
+          <CheckCircle2 className="mx-auto text-[#1687D9]" size={44} />
+          <p className="eyebrow mt-6">Order received</p>
+          <h1 className="!text-3xl">Thank you for your order.</h1>
+          <p className="my-5 text-[#637381]">
+            Keep this reference when contacting our team. We will review your
+            order and confirm fulfilment details and any additional charges.
+          </p>
+          <p className="reference">{order.orderNumber}</p>
+          <PriceDisplay large price={order.total} />
+          <p className="mt-3 text-sm text-[#637381]">
+            Products total. Delivery and installation arrangements will be
+            confirmed.
+          </p>
+          <div className="mt-7 flex flex-wrap justify-center gap-3">
+            <Button to="/shop">Continue Shopping</Button>
+            <Button variant="secondary" to="/contact">
+              Contact our team
+            </Button>
           </div>
-
-          <h1 className="mt-6 text-3xl font-black text-[#0B1F33]">
-            Order Received
-          </h1>
-
-          <p className="mt-3 text-sm leading-7 text-gray-500">
-            Thank you. Your order
-            has been submitted
-            successfully.
-          </p>
-
-          {completedOrder.orderNumber && (
-            <div className="mt-7 rounded-2xl bg-[#EAF6FF] p-5">
-
-              <p className="text-xs font-bold uppercase tracking-[0.15em] text-[#1687D9]">
-                Order Reference
-              </p>
-
-              <p className="mt-2 text-xl font-black text-[#0B1F33]">
-                {
-                  completedOrder.orderNumber
-                }
-              </p>
-
-            </div>
-          )}
-
-          <Link
-            to="/shop"
-            className="mt-8 inline-flex items-center justify-center rounded-xl bg-[#1687D9] px-6 py-3 text-sm font-bold text-white"
-          >
-            Continue Shopping
-          </Link>
-
         </div>
-
-      </main>
+      </Container>
     );
-  }
-
-  if (
-    items.length === 0
-  ) {
+  if (!cart.cartItems.length && !pending)
     return (
-      <main className="min-h-[65vh] bg-[#F8FAFC] px-5 py-16">
-
-        <div className="mx-auto max-w-xl rounded-3xl border border-gray-200 bg-white p-10 text-center">
-
-          <ShoppingBag
-            size={42}
-            className="mx-auto text-gray-300"
-          />
-
-          <h1 className="mt-5 text-2xl font-black text-[#0B1F33]">
-            Your cart is empty
-          </h1>
-
-          <p className="mt-2 text-sm text-gray-500">
-            Add products before
-            proceeding to checkout.
-          </p>
-
-          <Link
-            to="/shop"
-            className="mt-6 inline-flex rounded-xl bg-[#1687D9] px-6 py-3 text-sm font-bold text-white"
-          >
-            Browse Products
-          </Link>
-
-        </div>
-
-      </main>
+      <Container className="section-rj">
+        <EmptyState heading="h1" title="Your cart is empty">
+          Choose your products before proceeding to checkout.
+        </EmptyState>
+      </Container>
     );
-  }
-
   return (
-    <main className="bg-[#F8FAFC]">
-
-      <section className="mx-auto max-w-7xl px-5 py-10 sm:px-6 lg:px-8 lg:py-14">
-
-        <Link
-          to="/cart"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-[#1687D9]"
-        >
-          <ChevronLeft
-            size={17}
-          />
-
-          Back to Cart
-        </Link>
-
-        <div className="mt-7 grid gap-8 lg:grid-cols-[1fr_420px]">
-
+    <>
+      <PageHero eyebrow="Checkout" title="Review. Send. Stay comfortable.">
+        No account needed. We will confirm your order details with you.
+      </PageHero>
+      <Container className="section-rj">
+        <div className="commerce-layout">
           <form
-            onSubmit={
-              handleSubmit
-            }
-            className="space-y-6"
+            onSubmit={submit}
+            noValidate
+            className="space-y-5"
+            aria-label="Checkout"
           >
-
-            <div>
-
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#1687D9]">
-                Checkout
-              </p>
-
-              <h1 className="mt-2 text-3xl font-black text-[#0B1F33]">
-                Complete Your Order
-              </h1>
-
-            </div>
-
             {error && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
-                {error}
-              </div>
+              <Alert error>
+                {error}{" "}
+                <Link className="underline" to="/cart">
+                  Review cart
+                </Link>
+              </Alert>
             )}
-
-            {/* Customer */}
-            <CheckoutSection
-              title="Customer Information"
+            {pending && (
+              <Alert>
+                Your previous order needs confirmation. Retry below to check the
+                same order without creating a duplicate. Your original details
+                are preserved.
+              </Alert>
+            )}
+            <fieldset
+              disabled={submitting || Boolean(pending)}
+              className="space-y-5"
             >
-
-              <div className="grid gap-5 sm:grid-cols-2">
-
-                <Field
-                  label="Full Name"
-                  required
-                >
-                  <input
-                    name="fullName"
-                    value={
-                      form.fullName
-                    }
-                    onChange={
-                      handleChange
-                    }
-                    required
-                    className={
-                      inputClass
-                    }
-                  />
-                </Field>
-
-                <Field
-                  label="Phone"
-                  required
-                >
-                  <input
-                    name="phone"
-                    value={
-                      form.phone
-                    }
-                    onChange={
-                      handleChange
-                    }
-                    required
-                    className={
-                      inputClass
-                    }
-                  />
-                </Field>
-
-              </div>
-
-              <div className="mt-5">
-
-                <Field label="Email">
-
-                  <input
-                    type="email"
-                    name="email"
-                    value={
-                      form.email
-                    }
-                    onChange={
-                      handleChange
-                    }
-                    className={
-                      inputClass
-                    }
-                  />
-
-                </Field>
-
-              </div>
-
-            </CheckoutSection>
-
-            {/* Fulfillment */}
-            <CheckoutSection
-              title="Fulfillment"
-            >
-
-              <div className="grid gap-4 sm:grid-cols-2">
-
-                <ChoiceCard
-                  icon={Truck}
-                  title="Delivery"
-                  description="Deliver the order to your location."
-                  checked={
-                    form.fulfillmentMethod ===
-                    "delivery"
-                  }
-                >
-                  <input
-                    type="radio"
-                    name="fulfillmentMethod"
-                    value="delivery"
-                    checked={
-                      form.fulfillmentMethod ===
-                      "delivery"
-                    }
-                    onChange={
-                      handleChange
-                    }
-                    className="sr-only"
-                  />
-                </ChoiceCard>
-
-                <ChoiceCard
-                  icon={
-                    PackageCheck
-                  }
-                  title="Pickup"
-                  description="Arrange collection directly with R&J AC."
-                  checked={
-                    form.fulfillmentMethod ===
-                    "pickup"
-                  }
-                >
-                  <input
-                    type="radio"
-                    name="fulfillmentMethod"
-                    value="pickup"
-                    checked={
-                      form.fulfillmentMethod ===
-                      "pickup"
-                    }
-                    onChange={
-                      handleChange
-                    }
-                    className="sr-only"
-                  />
-                </ChoiceCard>
-
-              </div>
-
-              {settings.deliveryNote && (
-                <div className="mt-5 rounded-xl bg-[#EAF6FF] p-4 text-sm leading-6 text-[#0B1F33]">
-                  {
-                    settings.deliveryNote
-                  }
+              <FormSection number="01" title="Contact Details">
+                <div className="form-grid">
+                  {field("fullName", "Full name *", {
+                    autoComplete: "name",
+                    required: true,
+                  })}
+                  {field("phone", "Phone number *", {
+                    type: "tel",
+                    autoComplete: "tel",
+                    required: true,
+                    hint: "Ghana: 020 123 4567 or +233 20 123 4567.",
+                  })}
+                  {field("email", "Email (optional)", {
+                    type: "email",
+                    autoComplete: "email",
+                  })}
                 </div>
-              )}
-
-              {form.fulfillmentMethod ===
-                "delivery" && (
-                <div className="mt-6 grid gap-5 sm:grid-cols-2">
-
-                  <Field
-                    label="Delivery Address"
-                    required
-                  >
-                    <input
-                      name="address"
-                      value={
-                        form.address
-                      }
-                      onChange={
-                        handleChange
-                      }
-                      required
-                      className={
-                        inputClass
-                      }
-                    />
-                  </Field>
-
-                  <Field
-                    label="Town / Area"
-                    required
-                  >
-                    <input
-                      name="town"
-                      value={
-                        form.town
-                      }
-                      onChange={
-                        handleChange
-                      }
-                      required
-                      className={
-                        inputClass
-                      }
-                    />
-                  </Field>
-
-                  <div className="sm:col-span-2">
-
-                    <Field label="Landmark">
-
+              </FormSection>
+              <FormSection number="02" title="Fulfillment">
+                <div className="form-grid">
+                  {["delivery", "pickup"].map((value) => (
+                    <label key={value} className="choice">
                       <input
-                        name="landmark"
-                        value={
-                          form.landmark
-                        }
-                        onChange={
-                          handleChange
-                        }
-                        placeholder="Optional landmark"
-                        className={
-                          inputClass
-                        }
+                        name="fulfillmentMethod"
+                        type="radio"
+                        value={value}
+                        checked={form.fulfillmentMethod === value}
+                        onChange={change}
                       />
-
-                    </Field>
-
-                  </div>
-
+                      <span className="capitalize font-semibold">{value}</span>
+                    </label>
+                  ))}
                 </div>
-              )}
-
-            </CheckoutSection>
-
-            {/* Installation */}
-            <CheckoutSection
-              title="Installation"
-            >
-
-              <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-gray-200 p-5">
-
-                <input
-                  type="checkbox"
-                  name="installationRequired"
-                  checked={
-                    form.installationRequired
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  className="mt-1"
-                />
-
-                <div>
-
-                  <div className="flex items-center gap-2 font-bold text-[#0B1F33]">
-                    <Wrench
-                      size={18}
-                      className="text-[#1687D9]"
-                    />
-
-                    I need installation
-                  </div>
-
-                  <p className="mt-1 text-sm leading-6 text-gray-500">
-                    R&J AC can contact
-                    you to arrange
-                    professional
-                    installation.
-                  </p>
-
-                </div>
-
-              </label>
-
-              {form.installationRequired && (
-                <div className="mt-5">
-
-                  <Field
-                    label="Installation Address"
-                    required
-                  >
-                    <input
-                      name="installationAddress"
-                      value={
-                        form.installationAddress
-                      }
-                      onChange={
-                        handleChange
-                      }
-                      required
-                      className={
-                        inputClass
-                      }
-                    />
-                  </Field>
-
-                </div>
-              )}
-
-            </CheckoutSection>
-
-            {/* Payment */}
-            <CheckoutSection
-              title="Payment"
-            >
-
-              <label className="flex cursor-pointer items-start gap-4 rounded-2xl border-2 border-[#1687D9] bg-[#EAF6FF] p-5">
-
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="pay-on-delivery"
-                  checked={
-                    form.paymentMethod ===
-                    "pay-on-delivery"
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  className="mt-1"
-                />
-
-                <div>
-
-                  <p className="font-bold text-[#0B1F33]">
-                    Pay on Delivery /
-                    Collection
-                  </p>
-
-                  <p className="mt-1 text-sm leading-6 text-gray-500">
-                    Payment
-                    arrangements will
-                    be confirmed by
-                    R&J AC.
-                  </p>
-
-                </div>
-
-              </label>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-400">
-                  Mobile Money —
-                  Coming Soon
-                </div>
-
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-400">
-                  Card Payment —
-                  Coming Soon
-                </div>
-
-              </div>
-
-            </CheckoutSection>
-
-            <CheckoutSection
-              title="Additional Notes"
-            >
-
-              <textarea
-                name="notes"
-                value={
-                  form.notes
-                }
-                onChange={
-                  handleChange
-                }
-                rows="4"
-                placeholder="Anything else we should know?"
-                className={
-                  inputClass
-                }
-              />
-
-            </CheckoutSection>
-
-            <button
-              type="submit"
-              disabled={
-                submitting
-              }
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1687D9] px-6 py-4 font-bold text-white transition hover:bg-[#1176BF] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <ShoppingBag
-                size={19}
-              />
-
-              {submitting
-                ? "Placing Order..."
-                : "Place Order"}
-            </button>
-
-          </form>
-
-          {/* Summary */}
-          <aside>
-
-            <div className="sticky top-24 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
-
-              <div className="border-b border-gray-100 p-6">
-
-                <h2 className="text-lg font-black text-[#0B1F33]">
-                  Order Summary
-                </h2>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  {items.length} item
-                  {items.length ===
-                  1
-                    ? ""
-                    : "s"}
+                <p className="mt-4 text-sm text-[#637381]">
+                  {form.fulfillmentMethod === "delivery"
+                    ? settings.deliveryNote
+                    : "Arrange collection with our team after your order is reviewed."}
                 </p>
-
-              </div>
-
-              <div className="max-h-[420px] divide-y divide-gray-100 overflow-y-auto">
-
-                {items.map(
-                  (item) => (
-                    <div
-                      key={
-                        item._id ||
-                        item.id
-                      }
-                      className="flex gap-4 p-5"
-                    >
-
-                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-[#F5F8FA]">
-
-                        <ProductVisual
-                          product={
-                            item
-                          }
-                        />
-
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-
-                        <p className="line-clamp-2 text-sm font-bold text-[#0B1F33]">
-                          {item.name}
-                        </p>
-
-                        <p className="mt-1 text-xs text-gray-500">
-                          Qty:{" "}
-                          {
-                            item.quantity
-                          }
-                        </p>
-
-                        <p className="mt-2 text-sm font-black text-[#0B1F33]">
-                          GH₵{" "}
-                          {(
-                            Number(
-                              item.price ||
-                                0
-                            ) *
-                            Number(
-                              item.quantity ||
-                                1
-                            )
-                          ).toLocaleString()}
-                        </p>
-
-                      </div>
-
-                    </div>
-                  )
+                {form.fulfillmentMethod === "delivery" && (
+                  <div className="form-grid mt-6">
+                    {field("address", "Delivery address *", {
+                      required: true,
+                      autoComplete: "street-address",
+                    })}
+                    {field("town", "Town / area *", {
+                      required: true,
+                      autoComplete: "address-level2",
+                    })}
+                    {field("landmark", "Landmark (optional)")}
+                  </div>
                 )}
-
-              </div>
-
-              <div className="border-t border-gray-100 p-6">
-
-                <div className="flex justify-between text-sm text-gray-500">
-
-                  <span>
-                    Subtotal
-                  </span>
-
-                  <span>
-                    GH₵{" "}
-                    {subtotal.toLocaleString()}
-                  </span>
-
+              </FormSection>
+              <FormSection number="03" title="Installation">
+                <label className="choice">
+                  <input
+                    type="checkbox"
+                    name="installationRequired"
+                    checked={form.installationRequired}
+                    onChange={change}
+                  />
+                  <span>Request installation assistance</span>
+                </label>
+                <p className="mt-3 text-sm text-[#637381]">
+                  Our team will confirm the work, schedule and charges before
+                  proceeding.
+                </p>
+                {form.installationRequired && (
+                  <div className="mt-5">
+                    {field("installationAddress", "Installation address *", {
+                      required: true,
+                    })}
+                  </div>
+                )}
+              </FormSection>
+              <FormSection number="04" title="Payment">
+                <label className="choice">
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    checked
+                    readOnly
+                    value="pay-on-delivery"
+                  />
+                  <span>Pay on delivery / collection</span>
+                </label>
+                <p className="mt-4 text-sm text-[#637381]">
+                  No online payment is taken here. Mobile Money and card
+                  checkout are currently unavailable.
+                </p>
+              </FormSection>
+              <FormSection number="05" title="Notes & review">
+                {field("notes", "Anything else we should know?", {
+                  multiline: true,
+                })}
+                <p className="mt-4 text-sm text-[#637381]">
+                  Check your items, contact details and address before
+                  submitting.
+                </p>
+                {!pending && (
+                  <div className="mt-5 border-t border-[#E4E9EE] pt-5 lg:hidden">
+                    <p className="text-sm font-semibold">Products total</p>
+                    <PriceDisplay large price={cart.subtotal} />
+                    <p className="mt-2 text-sm text-[#637381]">
+                      {settings.deliveryNote}
+                    </p>
+                  </div>
+                )}
+              </FormSection>
+            </fieldset>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={submitting || (!pending && cart.checking)}
+            >
+              {submitting
+                ? "Checking your order..."
+                : pending
+                  ? "Retry original order"
+                  : "Place Order"}
+            </Button>
+          </form>
+          <aside className="order-summary panel">
+            <h2 className="!text-xl">Order Summary</h2>
+            <div className="my-5 divide-y divide-[#E4E9EE]">
+              {cart.cartItems.map((item) => (
+                <div key={item._id} className="flex gap-3 py-4">
+                  <div className="h-16 w-16 shrink-0 bg-[#F5F8FA] p-2">
+                    <ProductVisual product={item} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold leading-snug">
+                      {item.name}
+                    </p>
+                    <p className="text-xs text-[#637381]">
+                      Qty: {item.quantity}
+                    </p>
+                    <PriceDisplay price={item.price * item.quantity} />
+                  </div>
                 </div>
-
-                <div className="mt-3 flex justify-between text-sm text-gray-500">
-
-                  <span>
-                    Delivery
-                  </span>
-
-                  <span>
-                    To be confirmed
-                  </span>
-
-                </div>
-
-                <div className="mt-5 flex justify-between border-t border-gray-100 pt-5">
-
-                  <span className="font-bold text-[#0B1F33]">
-                    Products Total
-                  </span>
-
-                  <span className="text-xl font-black text-[#0B1F33]">
-                    GH₵{" "}
-                    {subtotal.toLocaleString()}
-                  </span>
-
-                </div>
-
-              </div>
-
+              ))}
             </div>
-
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#637381]">
+              Products total
+            </p>
+            <PriceDisplay large price={cart.subtotal} />
+            <p className="mt-4 text-sm text-[#637381]">
+              {pending
+                ? "The original order and its recorded prices will be used for this retry."
+                : settings.deliveryNote}
+            </p>
+            <Link className="text-link mt-3" to="/cart">
+              Review cart
+            </Link>
+            <div className="mt-5 border-t border-[#E4E9EE] pt-4">
+              <p className="text-sm font-bold">Need a hand?</p>
+              {settings.primaryPhone && (
+                <a
+                  className="text-link mr-4"
+                  href={phoneHref(settings.primaryPhone)}
+                >
+                  <Phone size={15} />
+                  Call us
+                </a>
+              )}
+              {settings.whatsapp && (
+                <a
+                  className="text-link"
+                  href={whatsappHref(settings.whatsapp)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <MessageCircle size={15} />
+                  WhatsApp
+                </a>
+              )}
+            </div>
           </aside>
-
         </div>
-
-      </section>
-
-    </main>
-  );
-}
-
-const inputClass =
-  "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#17212B] outline-none transition placeholder:text-gray-400 focus:border-[#1687D9] focus:ring-4 focus:ring-[#1687D9]/10";
-
-function CheckoutSection({
-  title,
-  children,
-}) {
-  return (
-    <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm sm:p-7">
-
-      <h2 className="text-lg font-black text-[#0B1F33]">
-        {title}
-      </h2>
-
-      <div className="mt-5">
-        {children}
-      </div>
-
-    </section>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}) {
-  return (
-    <label className="block">
-
-      <span className="mb-2 block text-sm font-semibold text-[#0B1F33]">
-
-        {label}
-
-        {required && (
-          <span className="ml-1 text-red-500">
-            *
-          </span>
-        )}
-
-      </span>
-
-      {children}
-
-    </label>
-  );
-}
-
-function ChoiceCard({
-  icon: Icon,
-  title,
-  description,
-  checked,
-  children,
-}) {
-  return (
-    <label
-      className={`cursor-pointer rounded-2xl border-2 p-5 transition ${
-        checked
-          ? "border-[#1687D9] bg-[#EAF6FF]"
-          : "border-gray-200 bg-white hover:border-gray-300"
-      }`}
-    >
-
-      {children}
-
-      <Icon
-        size={22}
-        className={
-          checked
-            ? "text-[#1687D9]"
-            : "text-gray-400"
-        }
-      />
-
-      <p className="mt-3 font-bold text-[#0B1F33]">
-        {title}
-      </p>
-
-      <p className="mt-1 text-sm leading-6 text-gray-500">
-        {description}
-      </p>
-
-    </label>
+      </Container>
+    </>
   );
 }

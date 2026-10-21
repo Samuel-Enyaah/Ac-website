@@ -1,18 +1,33 @@
-import { Phone } from "lucide-react";
-
+import { useBusinessSettings } from "../../context/BusinessSettingsState";
+import { phoneHref, whatsappHref } from "../../utils/businessLinks";
+import { Container } from "../ui/Storefront";
 export default function AnnouncementBar() {
+  const { settings } = useBusinessSettings();
   return (
     <div className="bg-[#0B1F33] text-white">
-      <div className="mx-auto flex min-h-9 max-w-7xl items-center justify-between gap-4 px-4 py-2 text-xs sm:px-6 lg:px-8">
-        <p className="font-medium">
-          Professional AC Sales, Installation, Repairs & Maintenance
-        </p>
-
-        <div className="hidden items-center gap-2 text-white/70 md:flex">
-          <Phone size={13} />
-          <span>Reliable Cooling Solutions</span>
+      <Container className="flex min-h-9 flex-wrap items-center justify-between gap-x-6 py-1 text-xs">
+        <p>Products, parts & technical service</p>
+        <div className="flex gap-5">
+          {settings.primaryPhone && (
+            <a
+              className="inline-flex min-h-9 items-center"
+              href={phoneHref(settings.primaryPhone)}
+            >
+              {settings.primaryPhone}
+            </a>
+          )}
+          {settings.whatsapp && (
+            <a
+              className="hidden min-h-9 items-center sm:inline-flex"
+              href={whatsappHref(settings.whatsapp)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              WhatsApp assistance
+            </a>
+          )}
         </div>
-      </div>
+      </Container>
     </div>
   );
 }

@@ -1,253 +1,277 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
-import {
-  Search,
-  ShoppingBag,
-  SlidersHorizontal,
-} from "lucide-react";
-
+import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { SlidersHorizontal, Search } from "lucide-react";
+import useCatalogue from "../hooks/useCatalogue";
+import usePageMeta from "../hooks/usePageMeta";
 import ProductCard from "../components/shop/ProductCard";
-import { getProducts } from "../services/productService";
+import {
+  Container,
+  PageHero,
+  Button,
+  Drawer,
+  Skeleton,
+  Alert,
+} from "../components/ui/Storefront";
+const categories = ["Air Conditioners", "Spare Parts", "Accessories"];
 
-const categories = [
-  "All",
-  "Air Conditioners",
-  "Spare Parts",
-  "Accessories",
-];
-
-export default function Shop() {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const [searchTerm, setSearchTerm] = useState("");
-  const [category, setCategory] = useState("All");
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadProducts() {
-      try {
-        setLoading(true);
-        setError("");
-
-        const data = await getProducts();
-
-        if (active) {
-          setProducts(data);
-        }
-      } catch (error) {
-        console.error(error);
-
-        if (active) {
-          setError(
-            "We could not load the products. Please try again."
-          );
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadProducts();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const filteredProducts = useMemo(() => {
-    const search = searchTerm
-      .trim()
-      .toLowerCase();
-
-    return products.filter((product) => {
-      const matchesCategory =
-        category === "All" ||
-        product.category === category;
-
-      const matchesSearch =
-        !search ||
-        product.name
-          ?.toLowerCase()
-          .includes(search) ||
-        product.brand
-          ?.toLowerCase()
-          .includes(search) ||
-        product.shortDescription
-          ?.toLowerCase()
-          .includes(search);
-
-      return matchesCategory && matchesSearch;
-    });
-  }, [products, category, searchTerm]);
-
+function CatalogueSearch({ value, onChange }) {
+  const [text, setText] = useState(value);
+  const [observedValue, setObservedValue] = useState(value);
+  if (value !== observedValue) {
+    setObservedValue(value);
+    // Restore cleared/shared/history searches, ignoring an older navigation
+    // while a more recent keystroke is already reflected in the browser URL.
+    const current = new URLSearchParams(window.location.search).get("search") || "";
+    if (current === value) setText(value);
+  }
   return (
-    <>
-      <section className="bg-[#0B1F33] py-16 text-white sm:py-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-[#74C5FF]">
-              <ShoppingBag size={16} />
-              R&J AC Shop
-            </div>
-
-            <h1 className="mt-5 text-4xl font-extrabold sm:text-5xl">
-              Air Conditioners, Spare Parts & Accessories
-            </h1>
-
-            <p className="mt-5 max-w-2xl leading-8 text-white/65">
-              Browse cooling systems, replacement parts
-              and installation accessories for residential
-              and commercial AC needs.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className="min-h-[600px] bg-[#F7FAFC] py-16 sm:py-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
-                <Search
-                  size={19}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-
-                <input
-                  type="search"
-                  value={searchTerm}
-                  onChange={(event) =>
-                    setSearchTerm(event.target.value)
-                  }
-                  placeholder="Search air conditioners, parts or accessories..."
-                  className="w-full rounded-xl border border-gray-200 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-[#1687D9] focus:ring-4 focus:ring-[#1687D9]/10"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 overflow-x-auto">
-                <SlidersHorizontal
-                  size={18}
-                  className="shrink-0 text-gray-400"
-                />
-
-                {categories.map((item) => (
-                  <button
-                    type="button"
-                    key={item}
-                    onClick={() => setCategory(item)}
-                    className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-                      category === item
-                        ? "bg-[#1687D9] text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-10">
-            <h2 className="text-2xl font-bold text-[#0B1F33]">
-              {category === "All"
-                ? "All Products"
-                : category}
-            </h2>
-
-            {!loading && !error && (
-              <p className="mt-1 text-sm text-gray-500">
-                {filteredProducts.length} product
-                {filteredProducts.length !== 1 ? "s" : ""}
-              </p>
-            )}
-          </div>
-
-          {loading && <LoadingProducts />}
-
-          {!loading && error && (
-            <div className="mt-8 rounded-3xl border border-red-100 bg-white px-6 py-16 text-center">
-              <p className="font-semibold text-red-600">
-                {error}
-              </p>
-
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="mt-5 rounded-xl bg-[#1687D9] px-5 py-3 font-semibold text-white"
-              >
-                Try Again
-              </button>
-            </div>
-          )}
-
-          {!loading &&
-            !error &&
-            filteredProducts.length > 0 && (
-              <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {filteredProducts.map((product) => (
-                  <ProductCard
-                    key={product._id}
-                    product={product}
-                  />
-                ))}
-              </div>
-            )}
-
-          {!loading &&
-            !error &&
-            filteredProducts.length === 0 && (
-              <div className="mt-10 rounded-3xl border border-gray-200 bg-white py-20 text-center">
-                <Search
-                  size={40}
-                  className="mx-auto text-gray-300"
-                />
-
-                <h3 className="mt-5 text-xl font-bold text-[#0B1F33]">
-                  No products found
-                </h3>
-
-                <p className="mt-2 text-gray-500">
-                  Try another search or category.
-                </p>
-              </div>
-            )}
-        </div>
-      </section>
-    </>
+    <input
+      id="product-search"
+      type="search"
+      className="!pl-10"
+      placeholder="Search products or brands"
+      value={text}
+      onChange={(event) => {
+        // Keep the controlled input urgent; router navigation is a transition.
+        setText(event.target.value);
+        onChange(event.target.value);
+      }}
+    />
   );
 }
 
-function LoadingProducts() {
-  return (
-    <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {Array.from({ length: 8 }).map(
-        (_, index) => (
-          <div
-            key={index}
-            className="overflow-hidden rounded-3xl border border-gray-200 bg-white"
-          >
-            <div className="h-56 animate-pulse bg-gray-100" />
-
-            <div className="space-y-4 p-6">
-              <div className="h-3 w-24 animate-pulse rounded bg-gray-100" />
-              <div className="h-6 w-3/4 animate-pulse rounded bg-gray-100" />
-              <div className="h-4 w-full animate-pulse rounded bg-gray-100" />
-              <div className="h-4 w-2/3 animate-pulse rounded bg-gray-100" />
-              <div className="h-7 w-32 animate-pulse rounded bg-gray-100" />
-            </div>
-          </div>
+export default function Shop() {
+  const { products, loading, error, retry } = useCatalogue();
+  const [params, setParams] = useSearchParams();
+  const [open, setOpen] = useState(false);
+  usePageMeta(
+    "Shop air conditioners, parts & accessories",
+    "Explore our current AC catalogue. Search by product or brand, compare prices and check availability.",
+  );
+  const search = params.get("search") || "",
+    category = params.get("category") || "",
+    brand = params.get("brand") || "",
+    stock = params.get("stock") || "",
+    sort = params.get("sort") || "newest";
+  const update = (key, value) =>
+    setParams(
+      () => {
+        const next = new URLSearchParams(window.location.search);
+        if (value) next.set(key, value);
+        else next.delete(key);
+        if (key !== "page") next.delete("page");
+        return next;
+      },
+      { replace: key === "search" },
+    );
+  const brands = [
+    ...new Set(products.map((p) => p.brand).filter(Boolean)),
+  ].sort();
+  const filtered = useMemo(
+    () =>
+      products
+        .filter(
+          (p) =>
+            (!category || p.category === category) &&
+            (!brand || p.brand === brand) &&
+            (stock !== "in" || p.stock > 0) &&
+            (!search ||
+              `${p.name} ${p.brand} ${p.description}`
+                .toLowerCase()
+                .includes(search.toLowerCase().trim())),
         )
+        .sort((a, b) =>
+          sort === "price-asc"
+            ? a.price - b.price
+            : sort === "price-desc"
+              ? b.price - a.price
+              : new Date(b.createdAt) - new Date(a.createdAt),
+        ),
+    [products, category, brand, stock, search, sort],
+  );
+  const pages = Math.max(1, Math.ceil(filtered.length / 12));
+  const page = Math.min(
+    pages,
+    Math.max(1, Number.parseInt(params.get("page"), 10) || 1),
+  );
+  const filters = (prefix) => (
+    <div className="grid gap-6">
+      <div>
+        <label
+          className="mb-2 block text-sm font-bold"
+          htmlFor={`${prefix}-category`}
+        >
+          Category
+        </label>
+        <select
+          id={`${prefix}-category`}
+          value={category}
+          onChange={(e) => update("category", e.target.value)}
+        >
+          <option value="">All categories</option>
+          {categories.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+      {brands.length > 0 && (
+        <div>
+          <label
+            className="mb-2 block text-sm font-bold"
+            htmlFor={`${prefix}-brand`}
+          >
+            Brand
+          </label>
+          <select
+            id={`${prefix}-brand`}
+            value={brand}
+            onChange={(e) => update("brand", e.target.value)}
+          >
+            <option value="">All brands</option>
+            {brands.map((b) => (
+              <option key={b}>{b}</option>
+            ))}
+          </select>
+        </div>
       )}
+      <label className="choice">
+        <input
+          type="checkbox"
+          checked={stock === "in"}
+          onChange={(e) => update("stock", e.target.checked ? "in" : "")}
+        />
+        In stock only
+      </label>
+      <Button variant="secondary" onClick={() => setParams({})}>
+        Clear filters
+      </Button>
     </div>
+  );
+  return (
+    <>
+      <PageHero
+        eyebrow="The R&J catalogue"
+        title="Find your next cooling solution."
+      >
+        Air conditioners, spare parts and accessories. Explore current prices
+        and availability, or contact us for help choosing.
+      </PageHero>
+      <Container className="section-rj">
+        <div className="catalogue-layout">
+          <aside className="hidden lg:block">
+            <h2 className="!text-xl mb-6">Filter products</h2>
+            {filters("desktop")}
+          </aside>
+          <div className="min-w-0">
+            <div className="catalogue-toolbar">
+              <div className="relative flex-1">
+                <label className="sr-only" htmlFor="product-search">
+                  Search products
+                </label>
+                <Search
+                  size={18}
+                  className="absolute left-3 top-4 text-[#637381]"
+                />
+                <CatalogueSearch
+                  value={search}
+                  onChange={(value) => update("search", value)}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                className="lg:hidden"
+                onClick={() => setOpen(true)}
+              >
+                <SlidersHorizontal size={17} />
+                Filters
+              </Button>
+              <div>
+                <label className="sr-only" htmlFor="product-sort">
+                  Sort products
+                </label>
+                <select
+                  id="product-sort"
+                  value={sort}
+                  onChange={(e) => update("sort", e.target.value)}
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="price-asc">Price: low to high</option>
+                  <option value="price-desc">Price: high to low</option>
+                </select>
+              </div>
+            </div>
+            <div className="my-6 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="!text-xl">{category || "All products"}</h2>
+              {!loading && (
+                <p role="status" className="text-sm text-[#637381]">
+                  {filtered.length} products
+                  {filtered.length > 0 ? ` / Page ${page} of ${pages}` : ""}
+                </p>
+              )}
+            </div>
+            {loading ? (
+              <Skeleton count={6} />
+            ) : error ? (
+              <Alert error>
+                {error}
+                <button onClick={retry} className="text-link ml-3">
+                  Try again
+                </button>
+              </Alert>
+            ) : filtered.length ? (
+              <>
+                <div className="product-grid catalogue-grid">
+                  {filtered.slice((page - 1) * 12, page * 12).map((p) => (
+                    <ProductCard key={p._id} product={p} />
+                  ))}
+                </div>
+                {pages > 1 && (
+                  <nav
+                    className="mt-10 flex flex-wrap justify-center gap-3"
+                    aria-label="Product pagination"
+                  >
+                    <Button
+                      variant="secondary"
+                      disabled={page === 1}
+                      onClick={() => update("page", String(page - 1))}
+                    >
+                      Previous
+                    </Button>
+                    <span className="px-3 py-3">
+                      {page} / {pages}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      disabled={page === pages}
+                      onClick={() => update("page", String(page + 1))}
+                    >
+                      Next
+                    </Button>
+                  </nav>
+                )}
+              </>
+            ) : (
+              <div className="empty-state">
+                <h2>No products found</h2>
+                <p>Try a different search or explore all categories.</p>
+                <Button onClick={() => setParams({})}>Clear filters</Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </Container>
+      <Drawer
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Product filters"
+      >
+        <div className="mt-8">
+          {filters("mobile")}
+          <Button className="mt-6 w-full" onClick={() => setOpen(false)}>
+            Show {filtered.length} products
+          </Button>
+        </div>
+      </Drawer>
+    </>
   );
 }

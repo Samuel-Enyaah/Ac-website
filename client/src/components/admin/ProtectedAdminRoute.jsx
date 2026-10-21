@@ -6,7 +6,7 @@ import {
 
 import {
   useAdminAuth,
-} from "../../context/AdminAuthContext";
+} from "../../context/AdminAuthState";
 
 export default function ProtectedAdminRoute() {
   const {

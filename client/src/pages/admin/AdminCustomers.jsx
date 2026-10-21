@@ -1,4 +1,6 @@
 import {
+  useRef,
+  useCallback,
   useEffect,
   useState,
 } from "react";
@@ -52,7 +54,7 @@ export default function AdminCustomers() {
   ] = useState(1);
 
   const [
-    loading,
+    loadingFlag,
     setLoading,
   ] = useState(true);
 
@@ -61,18 +63,25 @@ export default function AdminCustomers() {
     setError,
   ] = useState("");
 
-  const loadCustomers =
-    async () => {
-      try {
-        setLoading(true);
-        setError("");
+  const requestKey = JSON.stringify([
+    page,
+    search,
+  ]);
+  const [loadedKey, setLoadedKey] = useState(requestKey);
+  const loading = loadingFlag || loadedKey !== requestKey;
 
-        const result =
-          await getAdminCustomers({
+  const requestVersion = useRef(0);
+  const loadCustomers = useCallback(() => {
+
+    const version = ++requestVersion.current;
+    return getAdminCustomers({
             page,
             limit: 10,
             search,
-          });
+          }).then((result) => {
+      if (version !== requestVersion.current) return;
+
+        setError("");
 
         setCustomers(
           result.customers || []
@@ -81,7 +90,10 @@ export default function AdminCustomers() {
         setPagination(
           result.pagination
         );
-      } catch (error) {
+
+    }).catch((error) => {
+      if (version !== requestVersion.current) return;
+
         console.error(error);
 
         setError(
@@ -89,17 +101,23 @@ export default function AdminCustomers() {
             ?.message ||
             "Unable to load customers."
         );
-      } finally {
-        setLoading(false);
-      }
-    };
 
-  useEffect(() => {
-    loadCustomers();
-  }, [
+    }).finally(() => {
+      if (version !== requestVersion.current) return;
+
+        setLoadedKey(requestKey);
+        setLoading(false);
+
+    });
+  }, [requestKey,
     page,
     search,
   ]);
+
+  useEffect(() => {
+    loadCustomers();
+    return () => { requestVersion.current += 1; };
+  }, [loadCustomers]);
 
   const handleSearch =
     (event) => {
@@ -137,9 +155,7 @@ export default function AdminCustomers() {
 
         <button
           type="button"
-          onClick={
-            loadCustomers
-          }
+          onClick={() => { setLoading(true); loadCustomers(); }}
           className="inline-flex w-fit items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-[#0B1F33]"
         >
           <RefreshCw

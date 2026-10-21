@@ -1,4 +1,7 @@
+import FormCard from "../../components/ui/AdminFormCard";
+import Field from "../../components/ui/Field";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -25,6 +28,7 @@ import {
 } from "lucide-react";
 
 import {
+  reorderAdminProductImages,
   createAdminProduct,
   deleteAdminProductImage,
   getAdminProduct,
@@ -78,8 +82,11 @@ export default function AdminProductForm() {
   const fileInputRef =
     useRef(null);
 
-  const isEditing =
-    Boolean(productId);
+  const [createdId, setCreatedId] = useState(null);
+  const effectiveId = productId || createdId;
+  const isEditing = Boolean(effectiveId);
+  const submittingRef = useRef(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
 
   const [
     form,
@@ -144,20 +151,20 @@ export default function AdminProductForm() {
       0
     );
 
-  const loadProduct =
-    async () => {
+  const requestVersion = useRef(0);
+  const loadProduct = useCallback(() => {
       if (!productId) {
         return;
       }
 
-      try {
-        setLoading(true);
-        setError("");
 
-        const data =
-          await getAdminProduct(
+    const version = ++requestVersion.current;
+    return getAdminProduct(
             productId
-          );
+          ).then((data) => {
+      if (version !== requestVersion.current) return;
+
+        setError("");
 
         setProduct(data);
 
@@ -201,7 +208,10 @@ export default function AdminProductForm() {
             data.active !==
             false,
         });
-      } catch (error) {
+
+    }).catch((error) => {
+      if (version !== requestVersion.current) return;
+
         console.error(
           "Unable to load product:",
           {
@@ -217,39 +227,27 @@ export default function AdminProductForm() {
         );
 
         setError(
-          error.response?.data
+          Object.values(error.response?.data?.errors || {}).flat().join(" ") || error.response?.data
             ?.message ||
             "Unable to load product."
         );
-      } finally {
-        setLoading(false);
-      }
-    };
 
-  useEffect(() => {
-    loadProduct();
+    }).finally(() => {
+      if (version !== requestVersion.current) return;
+
+        setLoading(false);
+
+    });
   }, [productId]);
 
   useEffect(() => {
-    const urls =
-      selectedFiles.map(
-        (file) =>
-          URL.createObjectURL(
-            file
-          )
-      );
+    loadProduct();
+    return () => { requestVersion.current += 1; };
+  }, [loadProduct]);
 
-    setPreviewUrls(urls);
-
-    return () => {
-      urls.forEach(
-        (url) =>
-          URL.revokeObjectURL(
-            url
-          )
-      );
-    };
-  }, [selectedFiles]);
+  useEffect(() => () => {
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+  }, [previewUrls]);
 
   const handleChange =
     (event) => {
@@ -336,34 +334,25 @@ export default function AdminProductForm() {
         return;
       }
 
-      setSelectedFiles(
-        (current) => [
-          ...current,
-          ...files,
-        ]
-      );
+      const next = [...selectedFiles, ...files];
+      setSelectedFiles(next);
+      setPreviewUrls(next.map((file) => URL.createObjectURL(file)));
 
       setError("");
       setSuccess("");
     };
 
-  const removeSelectedFile =
-    (index) => {
-      setSelectedFiles(
-        (current) =>
-          current.filter(
-            (_, fileIndex) =>
-              fileIndex !==
-              index
-          )
-      );
-    };
+  const removeSelectedFile = (index) => {
+    const next = selectedFiles.filter((_, i) => i !== index);
+    setSelectedFiles(next);
+    setPreviewUrls(next.map((file) => URL.createObjectURL(file)));
+  };
 
   const handleDeleteExistingImage =
     async (image) => {
       if (
-        !productId ||
-        !image?.publicId
+        !effectiveId ||
+        !image?._id
       ) {
         return;
       }
@@ -379,7 +368,7 @@ export default function AdminProductForm() {
 
       try {
         setDeletingImage(
-          image.publicId
+          image._id
         );
 
         setError("");
@@ -387,8 +376,8 @@ export default function AdminProductForm() {
 
         const result =
           await deleteAdminProductImage(
-            productId,
-            image.publicId
+            effectiveId,
+            image.publicId, image._id
           );
 
         setProduct(
@@ -420,7 +409,7 @@ export default function AdminProductForm() {
         );
 
         setError(
-          error.response?.data
+          Object.values(error.response?.data?.errors || {}).flat().join(" ") || error.response?.data
             ?.message ||
             error.message ||
             "Unable to remove product image."
@@ -429,6 +418,18 @@ export default function AdminProductForm() {
         setDeletingImage("");
       }
     };
+
+  const makePrimary = async (image) => {
+    if (saving || deletingImage) return;
+    setDeletingImage(image._id);
+    try {
+      const ids = [image._id, ...existingImages.filter((item) => item._id !== image._id).map((item) => item._id)];
+      const result = await reorderAdminProductImages(effectiveId, ids);
+      setProduct(result.product);
+      setSuccess("Primary image updated.");
+    } catch (error) { setError(error.response?.data?.message || "Unable to change primary image."); }
+    finally { setDeletingImage(""); }
+  };
 
   const payload =
     useMemo(
@@ -456,7 +457,7 @@ export default function AdminProductForm() {
         oldPrice:
           form.oldPrice ===
           ""
-            ? undefined
+            ? null
             : Number(
                 form.oldPrice
               ),
@@ -473,6 +474,9 @@ export default function AdminProductForm() {
   const handleSubmit =
     async (event) => {
       event.preventDefault();
+      if (submittingRef.current || deletingImage) return;
+      if (!form.description.trim()) { setError("Full description is required."); return; }
+      if (form.oldPrice !== "" && (!Number.isFinite(Number(form.oldPrice)) || Number(form.oldPrice) <= Number(form.price))) { setError("Old price must be greater than the current price."); return; }
 
       if (
         !form.name.trim()
@@ -490,7 +494,7 @@ export default function AdminProductForm() {
         );
 
       if (
-        !Number.isFinite(
+        form.price === "" || !Number.isFinite(
           parsedPrice
         ) ||
         parsedPrice < 0
@@ -525,6 +529,7 @@ export default function AdminProductForm() {
       }
 
       try {
+        submittingRef.current = true;
         setSaving(true);
         setError("");
         setSuccess("");
@@ -538,7 +543,7 @@ export default function AdminProductForm() {
         if (isEditing) {
           savedProduct =
             await updateAdminProduct(
-              productId,
+              effectiveId,
               payload
             );
         } else {
@@ -555,8 +560,8 @@ export default function AdminProductForm() {
             );
         }
 
-        const savedId =
-          savedProduct?._id;
+        const savedId = savedProduct?._id;
+        if (savedId) { setCreatedId(savedId); setProduct(savedProduct); }
 
         if (!savedId) {
           throw new Error(
@@ -577,7 +582,7 @@ export default function AdminProductForm() {
             const imageResult =
               await uploadAdminProductImages(
                 savedId,
-                selectedFiles
+                selectedFiles, (event) => setUploadProgress(event.total ? Math.round(event.loaded * 100 / event.total) : null)
               );
 
             savedProduct =
@@ -625,10 +630,10 @@ export default function AdminProductForm() {
             );
 
             setError(
-              uploadError.response
+              "Product saved. Image upload failed: " + (uploadError.response
                 ?.data?.message ||
                 uploadError.message ||
-                "The product was saved, but the images could not be uploaded."
+                "Please try again.")
             );
 
             setSuccess(
@@ -637,17 +642,15 @@ export default function AdminProductForm() {
 
             window.scrollTo({
               top: 0,
-              behavior:
-                "smooth",
+              behavior: "auto",
             });
 
             return;
           }
         }
 
-        setSelectedFiles(
-          []
-        );
+        setSelectedFiles([]);
+        setPreviewUrls([]);
 
         setProduct(
           savedProduct
@@ -673,8 +676,7 @@ export default function AdminProductForm() {
 
           window.scrollTo({
             top: 0,
-            behavior:
-              "smooth",
+            behavior: "auto",
           });
         } else {
           navigate(
@@ -700,7 +702,7 @@ export default function AdminProductForm() {
         );
 
         setError(
-          error.response?.data
+          Object.values(error.response?.data?.errors || {}).flat().join(" ") || error.response?.data
             ?.message ||
             error.message ||
             "Unable to save product."
@@ -708,9 +710,11 @@ export default function AdminProductForm() {
 
         window.scrollTo({
           top: 0,
-          behavior: "smooth",
+          behavior: "auto",
         });
       } finally {
+        submittingRef.current = false;
+        setUploadProgress(null);
         setSaving(false);
       }
     };
@@ -767,13 +771,13 @@ export default function AdminProductForm() {
       </div>
 
       {error && (
-        <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+        <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="mt-6 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-700">
+        <div role="status" className="mt-6 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-700">
 
           <CheckCircle2
             size={18}
@@ -962,9 +966,10 @@ export default function AdminProductForm() {
 
           <div className="mt-5">
 
-            <Field label="Full Description">
+            <Field label="Full Description" required>
 
               <textarea
+                required
                 name="description"
                 value={
                   form.description
@@ -990,6 +995,7 @@ export default function AdminProductForm() {
           description="Upload clear product photographs. The first image is used as the primary image."
         >
 
+          {saving && <p role="status" className="mb-4 text-sm font-semibold">{uploadProgress === null ? "Saving product?" : uploadProgress === 100 ? "Processing uploaded images?" : `Uploading images: ${uploadProgress}%`}</p>}
           <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-[#FAFCFD] p-6">
 
             <input
@@ -1113,12 +1119,12 @@ export default function AdminProductForm() {
                         </span>
                       )}
 
-                      {image.publicId ? (
+                      {index > 0 && <button type="button" disabled={saving || Boolean(deletingImage)} onClick={() => makePrimary(image)} className="m-2 min-h-11 rounded-lg border px-3 text-sm font-semibold">Make primary</button>}
+                      {image._id ? (
                         <button
                           type="button"
                           disabled={
-                            deletingImage ===
-                            image.publicId ||
+                            Boolean(deletingImage) ||
                             saving
                           }
                           onClick={() =>
@@ -1130,7 +1136,7 @@ export default function AdminProductForm() {
                           className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-white text-red-600 shadow-md transition hover:bg-red-50 disabled:opacity-50"
                         >
                           {deletingImage ===
-                          image.publicId ? (
+                          image._id ? (
                             <Loader2
                               size={16}
                               className="animate-spin"
@@ -1356,75 +1362,6 @@ export default function AdminProductForm() {
 
 const inputClass =
   "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#17212B] outline-none transition placeholder:text-gray-400 focus:border-[#1687D9] focus:ring-4 focus:ring-[#1687D9]/10";
-
-function FormCard({
-  icon: Icon,
-  title,
-  description,
-  children,
-}) {
-  return (
-    <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
-
-      <div className="flex items-start gap-3 border-b border-gray-100 pb-5">
-
-        {Icon && (
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EAF6FF] text-[#1687D9]">
-            <Icon
-              size={19}
-            />
-          </div>
-        )}
-
-        <div>
-
-          <h2 className="font-bold text-[#0B1F33]">
-            {title}
-          </h2>
-
-          {description && (
-            <p className="mt-1 text-sm text-gray-500">
-              {description}
-            </p>
-          )}
-
-        </div>
-
-      </div>
-
-      <div className="pt-6">
-        {children}
-      </div>
-
-    </section>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}) {
-  return (
-    <label className="block">
-
-      <span className="mb-2 block text-sm font-semibold text-[#0B1F33]">
-
-        {label}
-
-        {required && (
-          <span className="ml-1 text-red-500">
-            *
-          </span>
-        )}
-
-      </span>
-
-      {children}
-
-    </label>
-  );
-}
 
 function ToggleCard({
   name,

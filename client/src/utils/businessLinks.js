@@ -9,7 +9,7 @@ export function phoneHref(
 
   return cleaned
     ? `tel:${cleaned}`
-    : "#";
+    : undefined;
 }
 
 export function emailHref(
@@ -17,7 +17,7 @@ export function emailHref(
 ) {
   return email
     ? `mailto:${email}`
-    : "#";
+    : undefined;
 }
 
 export function whatsappHref(
@@ -53,7 +53,7 @@ export function whatsappHref(
   }
 
   if (!digits) {
-    return "#";
+    return undefined;
   }
 
   return `https://wa.me/${digits}?text=${encodeURIComponent(

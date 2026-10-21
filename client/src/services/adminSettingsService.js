@@ -35,7 +35,7 @@ export async function uploadBusinessLogo(
   const response =
     await api.post(
       "/admin/settings/logo",
-      formData
+      formData, { timeout: 120000 }
     );
 
   return response.data;

@@ -54,13 +54,10 @@ export function uploadImageBuffer(
               result
             ) => {
               if (error) {
-                console.error(
-                  "Cloudinary upload error:",
-                  error
-                );
+                console.error("Cloudinary upload failed:", { status: error.http_code, name: error.name });
 
                 return reject(
-                  error
+                  Object.assign(new Error([401, 403].includes(error.http_code) ? "Media provider rejected the upload. Please check the configured media account permissions." : "Media upload failed. Please try again."), { statusCode: 502, expose: true })
                 );
               }
 
@@ -78,6 +75,8 @@ export function uploadImageBuffer(
               resolve(result);
             }
           );
+
+        uploadStream.on("error", () => reject(Object.assign(new Error("Image upload is temporarily unavailable. Please try again."), { statusCode: 502, expose: true })));
 
         const readable =
           Readable.from(
@@ -117,6 +116,7 @@ export async function deleteCloudinaryImage(
           "image",
 
         invalidate: true,
+        timeout: 30000,
       }
     );
 

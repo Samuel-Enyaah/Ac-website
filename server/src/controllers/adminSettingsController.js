@@ -1,174 +1,86 @@
+import { operationEvent } from "../services/operationEvents.js";
+import { flushOperations } from "../services/operationsOutbox.js";
 import { z } from "zod";
 
 import BusinessSettings from "../models/BusinessSettings.js";
 
-const optionalUrl =
-  z.union([
-    z
-      .string()
-      .trim()
-      .url(),
+const optionalUrl = z.union([z.string().trim().url(), z.literal("")]);
 
-    z.literal(""),
-  ]);
+const settingsSchema = z.object({
+  businessName: z.string().trim().min(2),
 
-const settingsSchema =
-  z.object({
-    businessName: z
-      .string()
-      .trim()
-      .min(2),
+  legalName: z.string().trim().min(2),
 
-    legalName: z
-      .string()
-      .trim()
-      .min(2),
+  slogan: z.string().trim().max(200),
 
-    slogan: z
-      .string()
-      .trim()
-      .max(200),
+  primaryPhone: z.string().trim().max(40),
 
-    primaryPhone: z
-      .string()
-      .trim()
-      .max(40),
+  secondaryPhone: z.string().trim().max(40),
 
-    secondaryPhone: z
-      .string()
-      .trim()
-      .max(40),
+  whatsapp: z.string().trim().max(40),
 
-    whatsapp: z
-      .string()
-      .trim()
-      .max(40),
+  email: z.union([z.string().trim().email(), z.literal("")]),
 
-    email: z.union([
-      z
-        .string()
-        .trim()
-        .email(),
+  address: z.string().trim().max(300),
 
-      z.literal(""),
-    ]),
+  city: z.string().trim().max(100),
 
-    address: z
-      .string()
-      .trim()
-      .max(300),
+  region: z.string().trim().max(100),
 
-    city: z
-      .string()
-      .trim()
-      .max(100),
+  country: z.string().trim().max(100),
 
-    region: z
-      .string()
-      .trim()
-      .max(100),
+  mapUrl: optionalUrl,
 
-    country: z
-      .string()
-      .trim()
-      .max(100),
+  deliveryNote: z.string().trim().max(500),
 
-    mapUrl:
-      optionalUrl,
+  serviceCoverage: z.string().trim().max(500),
 
-    deliveryNote: z
-      .string()
-      .trim()
-      .max(500),
+  bookingNote: z.string().trim().max(500),
 
-    serviceCoverage: z
-      .string()
-      .trim()
-      .max(500),
+  openingHours: z.object({
+    monday: z.string().trim().max(100),
 
-    bookingNote: z
-      .string()
-      .trim()
-      .max(500),
+    tuesday: z.string().trim().max(100),
 
-    openingHours:
-      z.object({
-        monday: z
-          .string()
-          .trim()
-          .max(100),
+    wednesday: z.string().trim().max(100),
 
-        tuesday: z
-          .string()
-          .trim()
-          .max(100),
+    thursday: z.string().trim().max(100),
 
-        wednesday: z
-          .string()
-          .trim()
-          .max(100),
+    friday: z.string().trim().max(100),
 
-        thursday: z
-          .string()
-          .trim()
-          .max(100),
+    saturday: z.string().trim().max(100),
 
-        friday: z
-          .string()
-          .trim()
-          .max(100),
+    sunday: z.string().trim().max(100),
+  }),
 
-        saturday: z
-          .string()
-          .trim()
-          .max(100),
+  socialLinks: z.object({
+    facebook: optionalUrl,
 
-        sunday: z
-          .string()
-          .trim()
-          .max(100),
-      }),
+    instagram: optionalUrl,
 
-    socialLinks:
-      z.object({
-        facebook:
-          optionalUrl,
+    tiktok: optionalUrl,
 
-        instagram:
-          optionalUrl,
-
-        tiktok:
-          optionalUrl,
-
-        x:
-          optionalUrl,
-      }),
-  });
+    x: optionalUrl,
+  }),
+});
 
 async function getOrCreateSettings() {
-  let settings =
-    await BusinessSettings.findOne({
-      key: "main",
-    });
+  let settings = await BusinessSettings.findOne({
+    key: "main",
+  });
 
   if (!settings) {
-    settings =
-      await BusinessSettings.create({
-        key: "main",
-      });
+    settings = await BusinessSettings.create({
+      key: "main",
+    });
   }
 
   return settings;
 }
 
-export async function getAdminSettings(
-  req,
-  res,
-  next
-) {
+export async function getAdminSettings(req, res, next) {
   try {
-    const settings =
-      await getOrCreateSettings();
+    const settings = await getOrCreateSettings();
 
     res.status(200).json({
       success: true,
@@ -180,31 +92,18 @@ export async function getAdminSettings(
   }
 }
 
-export async function updateAdminSettings(
-  req,
-  res,
-  next
-) {
+export async function updateAdminSettings(req, res, next) {
   try {
-    const parsed =
-      settingsSchema.safeParse(
-        req.body
-      );
+    const parsed = settingsSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({
-          success: false,
+      return res.status(400).json({
+        success: false,
 
-          message:
-            "Please check the business settings.",
+        message: "Please check the business settings.",
 
-          errors:
-            parsed.error
-              .flatten()
-              .fieldErrors,
-        });
+        errors: parsed.error.flatten().fieldErrors,
+      });
     }
 
     /*
@@ -218,34 +117,42 @@ export async function updateAdminSettings(
      * logoUrl
      * logoPublicId
      */
-    const settings =
-      await BusinessSettings.findOneAndUpdate(
-        {
-          key: "main",
+    const previous = await BusinessSettings.findOne({ key: "main" }).lean();
+    const changedFields = Object.keys(parsed.data).filter(
+      (key) =>
+        JSON.stringify(previous?.[key]) !== JSON.stringify(parsed.data[key]),
+    );
+    const audit = operationEvent("updated", "Business settings updated.", {
+      admin: req.admin,
+      metadata: { fields: changedFields },
+    });
+    const settings = await BusinessSettings.findOneAndUpdate(
+      {
+        key: "main",
+      },
+
+      {
+        ...(changedFields.length ? { $push: { eventOutbox: audit } } : {}),
+        $set: {
+          ...parsed.data,
+
+          updatedBy: req.admin._id,
         },
+      },
 
-        {
-          $set: {
-            ...parsed.data,
+      {
+        returnDocument: "after",
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      },
+    );
 
-            updatedBy:
-              req.admin._id,
-          },
-        },
-
-        {
-          new: true,
-          upsert: true,
-          runValidators: true,
-          setDefaultsOnInsert: true,
-        }
-      );
-
+    await flushOperations("settings", settings._id);
     res.status(200).json({
       success: true,
 
-      message:
-        "Business settings updated successfully.",
+      message: "Business settings updated successfully.",
 
       settings,
     });
@@ -254,76 +161,53 @@ export async function updateAdminSettings(
   }
 }
 
-export async function getPublicSettings(
-  req,
-  res,
-  next
-) {
+export async function getPublicSettings(req, res, next) {
   try {
-    const settings =
-      await getOrCreateSettings();
+    const settings = await getOrCreateSettings();
 
     res.status(200).json({
       success: true,
 
       settings: {
-        businessName:
-          settings.businessName,
+        businessName: settings.businessName,
 
-        legalName:
-          settings.legalName,
+        legalName: settings.legalName,
 
-        slogan:
-          settings.slogan,
+        slogan: settings.slogan,
 
-        primaryPhone:
-          settings.primaryPhone,
+        primaryPhone: settings.primaryPhone,
 
-        secondaryPhone:
-          settings.secondaryPhone,
+        secondaryPhone: settings.secondaryPhone,
 
-        whatsapp:
-          settings.whatsapp,
+        whatsapp: settings.whatsapp,
 
-        email:
-          settings.email,
+        email: settings.email,
 
-        address:
-          settings.address,
+        address: settings.address,
 
-        city:
-          settings.city,
+        city: settings.city,
 
-        region:
-          settings.region,
+        region: settings.region,
 
-        country:
-          settings.country,
+        country: settings.country,
 
-        mapUrl:
-          settings.mapUrl,
+        mapUrl: settings.mapUrl,
 
         /*
          * Public frontend only
          * receives the usable URL.
          */
-        logoUrl:
-          settings.logoUrl,
+        logoUrl: settings.logoUrl,
 
-        openingHours:
-          settings.openingHours,
+        openingHours: settings.openingHours,
 
-        socialLinks:
-          settings.socialLinks,
+        socialLinks: settings.socialLinks,
 
-        deliveryNote:
-          settings.deliveryNote,
+        deliveryNote: settings.deliveryNote,
 
-        serviceCoverage:
-          settings.serviceCoverage,
+        serviceCoverage: settings.serviceCoverage,
 
-        bookingNote:
-          settings.bookingNote,
+        bookingNote: settings.bookingNote,
       },
     });
   } catch (error) {

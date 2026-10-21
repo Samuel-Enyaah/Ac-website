@@ -1,3 +1,5 @@
+import adminStaffRoutes from "./routes/adminStaffRoutes.js";
+import adminOperationsRoutes from "./routes/adminOperationsRoutes.js";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -27,23 +29,21 @@ app.use(helmet());
 
 app.use(
   cors({
-    origin:
-      process.env.CLIENT_URL ||
-      "http://localhost:5173",
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
     credentials: true,
-  })
+  }),
 );
 
 app.use(
   express.json({
     limit: "2mb",
-  })
+  }),
 );
 
 app.use(
   express.urlencoded({
     extended: true,
-  })
+  }),
 );
 
 app.use(cookieParser());
@@ -68,66 +68,31 @@ app.get("/", (req, res) => {
   });
 });
 
-app.use(
-  "/api/v1/health",
-  healthRoutes
-);
+app.use("/api/v1/health", healthRoutes);
 
-app.use(
-  "/api/v1/products",
-  productRoutes
-);
+app.use("/api/v1/products", productRoutes);
 
-app.use(
-  "/api/v1/orders",
-  orderRoutes
-);
+app.use("/api/v1/orders", orderRoutes);
 
+app.use("/api/v1/service-bookings", serviceBookingRoutes);
 
-app.use(
-  "/api/v1/service-bookings",
-  serviceBookingRoutes
-);
+app.use("/api/v1/admin/auth", adminAuthRoutes);
 
-app.use(
-  "/api/v1/admin/auth",
-  adminAuthRoutes
-);
+app.use("/api/v1/admin/dashboard", adminDashboardRoutes);
 
-app.use(
-  "/api/v1/admin/dashboard",
-  adminDashboardRoutes
-);
-    
-app.use(
-  "/api/v1/admin/orders",
-  adminOrderRoutes
-);
+app.use("/api/v1/admin/orders", adminOrderRoutes);
 
-app.use(
-  "/api/v1/admin/bookings",
-  adminServiceBookingRoutes
-);
+app.use("/api/v1/admin/bookings", adminServiceBookingRoutes);
 
-app.use(
-  "/api/v1/admin/products",
-  adminProductRoutes
-);
-app.use(
-  "/api/v1/admin/customers",
-  adminCustomerRoutes
-);
+app.use("/api/v1/admin/products", adminProductRoutes);
+app.use("/api/v1/admin/customers", adminCustomerRoutes);
 
-app.use(
-  "/api/v1/admin/settings",
-  adminSettingsRoutes
-);
+app.use("/api/v1/admin/settings", adminSettingsRoutes);
 
-app.use(
-  "/api/v1/settings",
-  publicSettingsRoutes
-);
+app.use("/api/v1/settings", publicSettingsRoutes);
 
+app.use("/api/v1/admin/staff", adminStaffRoutes);
+app.use("/api/v1/admin/operations", adminOperationsRoutes);
 app.use(notFound);
 app.use(errorHandler);
 

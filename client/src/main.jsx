@@ -6,6 +6,7 @@ import {
 } from "react-router-dom";
 
 import App from "./App";
+import ErrorBoundary from "./components/ui/ErrorBoundary";
 
 import {
   CartProvider,
@@ -28,7 +29,7 @@ ReactDOM.createRoot(
 ).render(
   <React.StrictMode>
 
-    <BrowserRouter>
+    <ErrorBoundary><BrowserRouter>
 
       <BusinessSettingsProvider>
 
@@ -44,7 +45,7 @@ ReactDOM.createRoot(
 
       </BusinessSettingsProvider>
 
-    </BrowserRouter>
+    </BrowserRouter></ErrorBoundary>
 
   </React.StrictMode>
 );

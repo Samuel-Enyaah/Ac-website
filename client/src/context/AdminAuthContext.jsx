@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useState,
 } from "react";
@@ -11,8 +9,7 @@ import {
   logoutAdmin,
 } from "../services/adminAuthService";
 
-const AdminAuthContext =
-  createContext(null);
+import { AdminAuthContext } from "./AdminAuthState";
 
 export function AdminAuthProvider({
   children,
@@ -85,19 +82,4 @@ export function AdminAuthProvider({
       {children}
     </AdminAuthContext.Provider>
   );
-}
-
-export function useAdminAuth() {
-  const context =
-    useContext(
-      AdminAuthContext
-    );
-
-  if (!context) {
-    throw new Error(
-      "useAdminAuth must be used inside AdminAuthProvider"
-    );
-  }
-
-  return context;
 }

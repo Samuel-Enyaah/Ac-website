@@ -1,28 +1,17 @@
-import {
-  MessageCircle,
-} from "lucide-react";
+import { MessageCircle } from "lucide-react";
 
-import {
-  useBusinessSettings,
-} from "../../context/BusinessSettingsContext";
+import { useBusinessSettings } from "../../context/BusinessSettingsState";
 
-import {
-  whatsappHref,
-} from "../../utils/businessLinks";
+import { whatsappHref } from "../../utils/businessLinks";
 
 export default function WhatsAppButton() {
-  const {
-    settings,
-  } = useBusinessSettings();
+  const { settings } = useBusinessSettings();
 
   if (!settings.whatsapp) {
     return null;
   }
 
-  const href =
-    whatsappHref(
-      settings.whatsapp
-    );
+  const href = whatsappHref(settings.whatsapp);
 
   return (
     <a
@@ -30,11 +19,9 @@ export default function WhatsAppButton() {
       target="_blank"
       rel="noreferrer"
       aria-label="Chat with R&J AC on WhatsApp"
-      className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-green-500 text-white shadow-xl transition hover:scale-105 hover:bg-green-600"
+      className="fixed bottom-5 right-5 z-50 hidden h-14 w-14 items-center justify-center rounded-full bg-green-600 text-white shadow-lg transition hover:bg-green-700 md:flex"
     >
-      <MessageCircle
-        size={27}
-      />
+      <MessageCircle size={27} />
     </a>
   );
 }

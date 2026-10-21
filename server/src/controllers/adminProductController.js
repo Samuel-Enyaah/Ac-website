@@ -1,173 +1,42 @@
+import {
+  uploadTrackedImage,
+  scheduleStoredCleanup,
+  activateCleanup,
+} from "../services/mediaCleanup.js";
 import mongoose from "mongoose";
 import { z } from "zod";
 
 import Product from "../models/Product.js";
 
+const categories = ["Air Conditioners", "Spare Parts", "Accessories"];
+
 import {
-  deleteCloudinaryImage,
-  uploadImageBuffer,
-} from "../utils/cloudinaryMedia.js";
+  createProductSchema,
+  updateProductSchema,
+} from "../validation/product.js";
 
-const categories = [
-  "Air Conditioners",
-  "Spare Parts",
-  "Accessories",
-];
+const inventorySchema = z.object({
+  operation: z.enum(["set", "increase", "decrease"]),
 
-const optionalNumber = z
-  .union([
-    z.number(),
-    z.string(),
-    z.null(),
-    z.undefined(),
-  ])
-  .transform((value) => {
-    if (
-      value === "" ||
-      value === null ||
-      value === undefined
-    ) {
-      return undefined;
-    }
+  quantity: z.coerce.number().int().min(0),
 
-    return Number(value);
-  });
+  reason: z.string().trim().max(300).optional().default(""),
+});
 
-const optionalBoolean = z
-  .union([
-    z.boolean(),
-    z.string(),
-    z.undefined(),
-  ])
-  .transform((value) => {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    if (typeof value === "boolean") {
-      return value;
-    }
-
-    return value === "true";
-  });
-
-const createProductSchema =
-  z.object({
-    name: z
-      .string()
-      .trim()
-      .min(2),
-
-    category: z.enum(
-      categories
-    ),
-
-    brand: z
-      .string()
-      .trim()
-      .optional()
-      .default(""),
-
-    shortDescription: z
-      .string()
-      .trim()
-      .optional()
-      .default(""),
-
-    description: z
-      .string()
-      .trim()
-      .optional()
-      .default(""),
-
-    price: optionalNumber,
-
-    oldPrice: optionalNumber,
-
-    stock: optionalNumber,
-
-    featured:
-      optionalBoolean,
-
-    active:
-      optionalBoolean,
-
-    /*
-     * Temporary compatibility
-     * with the old URL-based form.
-     * Direct upload replaces this
-     * in Phase 6.7B.
-     */
-    imageUrl: z
-      .string()
-      .trim()
-      .optional()
-      .default(""),
-
-    specifications:
-      z.any().optional(),
-  });
-
-const updateProductSchema =
-  createProductSchema
-    .partial()
-    .omit({
-      stock: true,
-    });
-
-const inventorySchema =
-  z.object({
-    operation: z.enum([
-      "set",
-      "increase",
-      "decrease",
-    ]),
-
-    quantity: z.coerce
-      .number()
-      .int()
-      .min(0),
-
-    reason: z
-      .string()
-      .trim()
-      .max(300)
-      .optional()
-      .default(""),
-  });
-
-function escapeRegex(
-  value = ""
-) {
-  return value.replace(
-    /[.*+?^${}()|[\]\\]/g,
-    "\\$&"
-  );
+function escapeRegex(value = "") {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function slugify(
-  value = ""
-) {
+function slugify(value = "") {
   return String(value)
     .trim()
     .toLowerCase()
-    .replace(
-      /[^a-z0-9]+/g,
-      "-"
-    )
-    .replace(
-      /^-+|-+$/g,
-      ""
-    );
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
-async function createUniqueSlug(
-  name,
-  excludeId = null
-) {
-  const base =
-    slugify(name) ||
-    "product";
+async function createUniqueSlug(name, excludeId = null) {
+  const base = slugify(name) || "product";
 
   let slug = base;
   let suffix = 2;
@@ -183,99 +52,59 @@ async function createUniqueSlug(
       };
     }
 
-    const exists =
-      await Product.exists(
-        filter
-      );
+    const exists = await Product.exists(filter);
 
     if (!exists) {
       return slug;
     }
 
-    slug =
-      `${base}-${suffix}`;
+    slug = `${base}-${suffix}`;
 
     suffix += 1;
   }
 }
 
-function parseBooleanQuery(
-  value
-) {
-  if (
-    value === undefined ||
-    value === ""
-  ) {
+function parseBooleanQuery(value) {
+  if (value === undefined || value === "") {
     return undefined;
   }
 
-  if (
-    value === "true" ||
-    value === true
-  ) {
+  if (value === "true" || value === true) {
     return true;
   }
 
-  if (
-    value === "false" ||
-    value === false
-  ) {
+  if (value === "false" || value === false) {
     return false;
   }
 
   return undefined;
 }
 
-export async function getAdminProducts(
-  req,
-  res,
-  next
-) {
+export async function getAdminProducts(req, res, next) {
   try {
-    const page = Math.max(
-      Number.parseInt(
-        req.query.page,
-        10
-      ) || 1,
-      1
-    );
+    const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
 
     const limit = Math.min(
-      Math.max(
-        Number.parseInt(
-          req.query.limit,
-          10
-        ) || 20,
-        1
-      ),
-      100
+      Math.max(Number.parseInt(req.query.limit, 10) || 20, 1),
+      100,
     );
 
-    const search = String(
-      req.query.search || ""
-    ).trim();
+    const search = String(req.query.search || "").trim();
 
-    const category = String(
-      req.query.category || ""
-    ).trim();
+    const category = String(req.query.category || "").trim();
 
-    const active =
-      parseBooleanQuery(
-        req.query.active
-      );
+    const active = parseBooleanQuery(req.query.active);
 
-    const stockFilter =
-      String(
-        req.query.stock || ""
-      ).trim();
+    const stockFilter = String(req.query.stock || "").trim();
 
     const filter = {};
+    if (stockFilter === "attention") {
+      filter.stock = { $lte: 5 };
+      filter.active = true;
+    }
 
     if (search) {
-      const regex = new RegExp(
-        escapeRegex(search),
-        "i"
-      );
+      const regex = new RegExp(escapeRegex(search), "i");
 
       filter.$or = [
         {
@@ -293,77 +122,44 @@ export async function getAdminProducts(
       ];
     }
 
-    if (
-      category &&
-      categories.includes(
-        category
-      )
-    ) {
-      filter.category =
-        category;
+    if (category && categories.includes(category)) {
+      filter.category = category;
     }
 
-    if (
-      active !==
-      undefined
-    ) {
-      filter.active =
-        active;
+    if (active !== undefined) {
+      filter.active = active;
     }
 
-    if (
-      stockFilter ===
-      "out"
-    ) {
+    if (stockFilter === "out") {
       filter.stock = 0;
     }
 
-    if (
-      stockFilter ===
-      "low"
-    ) {
+    if (stockFilter === "low") {
       filter.stock = {
         $gt: 0,
         $lte: 5,
       };
     }
 
-    if (
-      stockFilter ===
-      "available"
-    ) {
+    if (stockFilter === "available") {
       filter.stock = {
         $gt: 0,
       };
     }
 
-    const [
-      products,
-      total,
-    ] =
-      await Promise.all([
-        Product.find(filter)
-          .sort({
-            createdAt: -1,
-          })
-          .skip(
-            (page - 1) *
-              limit
-          )
-          .limit(limit)
-          .lean(),
+    const [products, total] = await Promise.all([
+      Product.find(filter)
+        .sort({
+          createdAt: -1,
+        })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
 
-        Product.countDocuments(
-          filter
-        ),
-      ]);
+      Product.countDocuments(filter),
+    ]);
 
-    const pages = Math.max(
-      Math.ceil(
-        total / limit
-      ),
-      1
-    );
+    const pages = Math.max(Math.ceil(total / limit), 1);
 
     res.status(200).json({
       success: true,
@@ -376,11 +172,9 @@ export async function getAdminProducts(
         total,
         pages,
 
-        hasNextPage:
-          page < pages,
+        hasNextPage: page < pages,
 
-        hasPreviousPage:
-          page > 1,
+        hasPreviousPage: page > 1,
       },
     });
   } catch (error) {
@@ -388,39 +182,22 @@ export async function getAdminProducts(
   }
 }
 
-export async function getAdminProductById(
-  req,
-  res,
-  next
-) {
+export async function getAdminProductById(req, res, next) {
   try {
-    if (
-      !mongoose.isValidObjectId(
-        req.params.productId
-      )
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message:
-            "Invalid product ID.",
-        });
+    if (!mongoose.isValidObjectId(req.params.productId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID.",
+      });
     }
 
-    const product =
-      await Product.findById(
-        req.params.productId
-      );
+    const product = await Product.findById(req.params.productId);
 
     if (!product) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message:
-            "Product not found.",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Product not found.",
+      });
     }
 
     res.status(200).json({
@@ -432,79 +209,41 @@ export async function getAdminProductById(
   }
 }
 
-export async function createAdminProduct(
-  req,
-  res,
-  next
-) {
+export async function createAdminProduct(req, res, next) {
   try {
-    const parsed =
-      createProductSchema.safeParse(
-        req.body
-      );
+    const parsed = createProductSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({
-          success: false,
+      return res.status(400).json({
+        success: false,
 
-          message:
-            "Please check the product information.",
+        message: "Please check the product information.",
 
-          errors:
-            parsed.error
-              .flatten()
-              .fieldErrors,
-        });
+        errors: parsed.error.flatten().fieldErrors,
+      });
     }
 
-    const data =
-      parsed.data;
+    const data = parsed.data;
 
-    const price =
-      Number(data.price);
+    const price = Number(data.price);
 
-    if (
-      !Number.isFinite(price) ||
-      price < 0
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message:
-            "A valid product price is required.",
-        });
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid product price is required.",
+      });
     }
 
-    const stock =
-      data.stock ===
-      undefined
-        ? 0
-        : Number(
-            data.stock
-          );
+    const stock = data.stock === undefined ? 0 : Number(data.stock);
 
-    if (
-      !Number.isInteger(
-        stock
-      ) ||
-      stock < 0
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message:
-            "Opening stock must be a whole number of 0 or greater.",
-        });
+    if (!Number.isInteger(stock) || stock < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Opening stock must be a whole number of 0 or greater.",
+      });
     }
 
-    const slug =
-      await createUniqueSlug(
-        data.name
-      );
+    const slug = await createUniqueSlug(data.name);
 
     const images = [];
 
@@ -515,62 +254,42 @@ export async function createAdminProduct(
      */
     if (data.imageUrl) {
       images.push({
-        url:
-          data.imageUrl,
+        url: data.imageUrl,
         publicId: "",
       });
     }
 
-    const product =
-      await Product.create({
-        name: data.name,
-        slug,
+    const product = await Product.create({
+      name: data.name,
+      slug,
 
-        category:
-          data.category,
+      category: data.category,
 
-        brand:
-          data.brand || "",
+      brand: data.brand || "",
 
-        shortDescription:
-          data.shortDescription ||
-          "",
+      shortDescription: data.shortDescription || "",
 
-        description:
-          data.description ||
-          "",
+      description: data.description || "",
 
-        price,
+      price,
 
-        oldPrice:
-          data.oldPrice ===
-          undefined
-            ? undefined
-            : Number(
-                data.oldPrice
-              ),
+      oldPrice: data.oldPrice == null ? undefined : Number(data.oldPrice),
 
-        stock,
+      stock,
 
-        featured:
-          data.featured ??
-          false,
+      featured: data.featured ?? false,
 
-        active:
-          data.active ??
-          true,
+      active: data.active ?? true,
 
-        specifications:
-          data.specifications,
+      specifications: data.specifications,
 
-        images,
-      });
+      images,
+    });
 
     res.status(201).json({
       success: true,
 
-      message:
-        "Product created successfully.",
+      message: "Product created successfully.",
 
       product,
     });
@@ -579,171 +298,101 @@ export async function createAdminProduct(
   }
 }
 
-export async function updateAdminProduct(
-  req,
-  res,
-  next
-) {
+export async function updateAdminProduct(req, res, next) {
   try {
-    if (
-      !mongoose.isValidObjectId(
-        req.params.productId
-      )
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message:
-            "Invalid product ID.",
-        });
+    if (!mongoose.isValidObjectId(req.params.productId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID.",
+      });
     }
 
-    const parsed =
-      updateProductSchema.safeParse(
-        req.body
-      );
+    const parsed = updateProductSchema.safeParse(req.body);
 
     if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Please check the product information.",
+
+        errors: parsed.error.flatten().fieldErrors,
+      });
+    }
+
+    const product = await Product.findById(req.params.productId);
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found.",
+      });
+    }
+
+    const data = parsed.data;
+    const nextPrice = data.price ?? product.price;
+    const nextOldPrice =
+      data.oldPrice === undefined ? product.oldPrice : data.oldPrice;
+    if (nextOldPrice != null && nextOldPrice <= nextPrice) {
       return res
         .status(400)
         .json({
           success: false,
-
-          message:
-            "Please check the product information.",
-
-          errors:
-            parsed.error
-              .flatten()
-              .fieldErrors,
+          message: "Old price must be greater than the current price.",
+          errors: {
+            oldPrice: ["Old price must be greater than the current price."],
+          },
         });
     }
 
-    const product =
-      await Product.findById(
-        req.params.productId
-      );
+    if (data.name !== undefined) {
+      product.name = data.name;
 
-    if (!product) {
-      return res
-        .status(404)
-        .json({
+      product.slug = await createUniqueSlug(data.name, product._id);
+    }
+
+    if (data.category !== undefined) {
+      product.category = data.category;
+    }
+
+    if (data.brand !== undefined) {
+      product.brand = data.brand;
+    }
+
+    if (data.shortDescription !== undefined) {
+      product.shortDescription = data.shortDescription;
+    }
+
+    if (data.description !== undefined) {
+      product.description = data.description;
+    }
+
+    if (data.price !== undefined) {
+      const price = Number(data.price);
+
+      if (!Number.isFinite(price) || price < 0) {
+        return res.status(400).json({
           success: false,
-          message:
-            "Product not found.",
+          message: "Product price must be 0 or greater.",
         });
-    }
-
-    const data =
-      parsed.data;
-
-    if (
-      data.name !==
-      undefined
-    ) {
-      product.name =
-        data.name;
-
-      product.slug =
-        await createUniqueSlug(
-          data.name,
-          product._id
-        );
-    }
-
-    if (
-      data.category !==
-      undefined
-    ) {
-      product.category =
-        data.category;
-    }
-
-    if (
-      data.brand !==
-      undefined
-    ) {
-      product.brand =
-        data.brand;
-    }
-
-    if (
-      data.shortDescription !==
-      undefined
-    ) {
-      product.shortDescription =
-        data.shortDescription;
-    }
-
-    if (
-      data.description !==
-      undefined
-    ) {
-      product.description =
-        data.description;
-    }
-
-    if (
-      data.price !==
-      undefined
-    ) {
-      const price =
-        Number(
-          data.price
-        );
-
-      if (
-        !Number.isFinite(
-          price
-        ) ||
-        price < 0
-      ) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message:
-              "Product price must be 0 or greater.",
-          });
       }
 
-      product.price =
-        price;
+      product.price = price;
     }
 
-    if (
-      data.oldPrice !==
-      undefined
-    ) {
-      product.oldPrice =
-        Number(
-          data.oldPrice
-        );
+    if (data.oldPrice !== undefined) {
+      product.oldPrice = data.oldPrice === null ? null : Number(data.oldPrice);
     }
 
-    if (
-      data.featured !==
-      undefined
-    ) {
-      product.featured =
-        data.featured;
+    if (data.featured !== undefined) {
+      product.featured = data.featured;
     }
 
-    if (
-      data.active !==
-      undefined
-    ) {
-      product.active =
-        data.active;
+    if (data.active !== undefined) {
+      product.active = data.active;
     }
 
-    if (
-      data.specifications !==
-      undefined
-    ) {
-      product.specifications =
-        data.specifications;
+    if (data.specifications !== undefined) {
+      product.specifications = data.specifications;
     }
 
     /*
@@ -759,8 +408,7 @@ export async function updateAdminProduct(
     res.status(200).json({
       success: true,
 
-      message:
-        "Product updated successfully.",
+      message: "Product updated successfully.",
 
       product,
     });
@@ -769,129 +417,71 @@ export async function updateAdminProduct(
   }
 }
 
-export async function adjustProductInventory(
-  req,
-  res,
-  next
-) {
+export async function adjustProductInventory(req, res, next) {
   try {
-    if (
-      !mongoose.isValidObjectId(
-        req.params.productId
-      )
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message:
-            "Invalid product ID.",
-        });
+    if (!mongoose.isValidObjectId(req.params.productId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID.",
+      });
     }
 
-    const parsed =
-      inventorySchema.safeParse(
-        req.body
-      );
+    const parsed = inventorySchema.safeParse(req.body);
 
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({
-          success: false,
+      return res.status(400).json({
+        success: false,
 
-          message:
-            "Please check the inventory adjustment.",
+        message: "Please check the inventory adjustment.",
 
-          errors:
-            parsed.error
-              .flatten()
-              .fieldErrors,
-        });
+        errors: parsed.error.flatten().fieldErrors,
+      });
     }
 
-    const {
-      operation,
-      quantity,
-    } = parsed.data;
+    const { operation, quantity } = parsed.data;
 
-    const product =
-      await Product.findById(
-        req.params.productId
-      );
-
-    if (!product) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message:
-            "Product not found.",
-        });
-    }
-
-    let nextStock =
-      Number(
-        product.stock || 0
-      );
-
-    if (
+    const filter = { _id: req.params.productId };
+    if (operation === "decrease") filter.stock = { $gte: quantity };
+    const update =
       operation === "set"
-    ) {
-      nextStock =
-        quantity;
-    }
-
-    if (
-      operation ===
-      "increase"
-    ) {
-      nextStock +=
-        quantity;
-    }
-
-    if (
-      operation ===
-      "decrease"
-    ) {
-      nextStock -=
-        quantity;
-    }
-
-    if (nextStock < 0) {
+        ? { $set: { stock: quantity }, $inc: { __v: 1 } }
+        : {
+            $inc: {
+              stock: operation === "increase" ? quantity : -quantity,
+              __v: 1,
+            },
+          };
+    const product = await Product.findOneAndUpdate(filter, update, {
+      returnDocument: "after",
+      runValidators: true,
+    });
+    if (!product) {
+      const exists = await Product.exists({ _id: req.params.productId });
       return res
-        .status(400)
+        .status(exists ? 400 : 404)
         .json({
           success: false,
-
-          message:
-            "Inventory cannot be reduced below zero.",
+          message: exists
+            ? "Inventory cannot be reduced below zero."
+            : "Product not found.",
         });
     }
-
-    product.stock =
-      nextStock;
-
-    await product.save();
 
     res.status(200).json({
       success: true,
 
-      message:
-        "Inventory updated successfully.",
+      message: "Inventory updated successfully.",
 
       product,
 
       inventory: {
-        stock:
-          product.stock,
+        stock: product.stock,
 
         operation,
 
         quantity,
 
-        reason:
-          parsed.data.reason,
+        reason: parsed.data.reason,
       },
     });
   } catch (error) {
@@ -903,236 +493,146 @@ export async function adjustProductInventory(
  * CLOUDINARY PRODUCT MEDIA
  */
 
-export async function uploadAdminProductImages(
-  req,
-  res,
-  next
-) {
+export async function uploadAdminProductImages(req, res, next) {
   const uploadedAssets = [];
 
   try {
-    if (
-      !mongoose.isValidObjectId(
-        req.params.productId
-      )
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message:
-            "Invalid product ID.",
-        });
+    if (!mongoose.isValidObjectId(req.params.productId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID.",
+      });
     }
 
-    const product =
-      await Product.findById(
-        req.params.productId
-      );
+    const product = await Product.findById(req.params.productId);
 
     if (!product) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message:
-            "Product not found.",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Product not found.",
+      });
     }
 
-    const files =
-      req.files || [];
+    const files = req.files || [];
 
-    if (
-      files.length === 0
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
+    if (files.length === 0) {
+      return res.status(400).json({
+        success: false,
 
-          message:
-            "Please select at least one image.",
-        });
+        message: "Please select at least one image.",
+      });
     }
 
-    const currentImages =
-      product.images || [];
+    const currentImages = product.images || [];
 
-    if (
-      currentImages.length +
-        files.length >
-      6
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
+    if (currentImages.length + files.length > 6) {
+      return res.status(400).json({
+        success: false,
 
-          message:
-            "A product can have a maximum of 6 images.",
-        });
+        message: "A product can have a maximum of 6 images.",
+      });
     }
 
-    for (
-      const file of files
-    ) {
-      const result =
-        await uploadImageBuffer(
-          file.buffer,
-          {
-            folder:
-              "rj-ac/products",
+    for (const file of files) {
+      const result = await uploadTrackedImage(
+        file.buffer,
+        {
+          folder: "rj-ac/products",
 
-            transformation: [
-              {
-                width: 1600,
-                height: 1600,
-                crop: "limit",
-              },
-              {
-                quality: "auto",
-              },
-              {
-                fetch_format:
-                  "auto",
-              },
-            ],
-          }
-        );
+          transformation: [
+            {
+              width: 1600,
+              height: 1600,
+              crop: "limit",
+            },
+            {
+              quality: "auto",
+            },
+            {
+              fetch_format: "auto",
+            },
+          ],
+        },
+        "product",
+        product._id,
+      );
 
       const asset = {
-        url:
-          result.secure_url,
+        url: result.secure_url,
 
-        publicId:
-          result.public_id,
+        publicId: result.public_id,
       };
 
-      uploadedAssets.push(
-        asset
-      );
+      uploadedAssets.push(asset);
     }
 
-    product.images.push(
-      ...uploadedAssets
-    );
+    product.images.push(...uploadedAssets);
 
     await product.save();
 
     res.status(200).json({
       success: true,
 
-      message:
-        "Product images uploaded successfully.",
+      message: "Product images uploaded successfully.",
 
       product,
 
-      images:
-        product.images,
+      images: product.images,
     });
   } catch (error) {
-    /*
-     * If Cloudinary succeeded
-     * but MongoDB failed, clean up
-     * the newly uploaded files.
-     */
-    for (
-      const asset of
-      uploadedAssets
-    ) {
-      try {
-        await deleteCloudinaryImage(
-          asset.publicId
-        );
-      } catch (
-        cleanupError
-      ) {
-        console.error(
-          "Cloudinary cleanup failed:",
-          cleanupError
-        );
-      }
-    }
-
+    // Durable upload intents recover unattached assets even when MongoDB is unavailable.
     next(error);
   }
 }
 
-export async function deleteAdminProductImage(
-  req,
-  res,
-  next
-) {
+export async function deleteAdminProductImage(req, res, next) {
   try {
-    if (
-      !mongoose.isValidObjectId(
-        req.params.productId
-      )
-    ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message:
-            "Invalid product ID.",
-        });
+    if (!mongoose.isValidObjectId(req.params.productId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID.",
+      });
     }
 
-    const {
-      publicId,
-    } = req.body;
+    const { publicId, imageId } = req.body || {};
 
-    if (!publicId) {
-      return res
-        .status(400)
-        .json({
-          success: false,
+    if (!publicId && !imageId) {
+      return res.status(400).json({
+        success: false,
 
-          message:
-            "Image publicId is required.",
-        });
+        message: "Image ID or publicId is required.",
+      });
     }
 
-    const product =
-      await Product.findById(
-        req.params.productId
-      );
+    const product = await Product.findById(req.params.productId);
 
     if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found.",
+      });
+    }
+
+    const image = product.images.find((item) =>
+      imageId ? String(item._id) === imageId : item.publicId === publicId,
+    );
+    if (!image)
       return res
         .status(404)
         .json({
           success: false,
-          message:
-            "Product not found.",
+          message: "Image does not belong to this product.",
         });
-    }
-
-    const imageExists =
-      product.images.some(
-        (image) =>
-          image.publicId ===
-          publicId
-      );
-
-    if (!imageExists) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-
-          message:
-            "Image does not belong to this product.",
-        });
-    }
-
-    product.images =
-      product.images.filter(
-        (image) =>
-          image.publicId !==
-          publicId
-      );
+    const assetId = image.publicId;
+    await scheduleStoredCleanup(
+      assetId,
+      "product",
+      product._id,
+      "product-image-removal",
+    );
+    product.images = product.images.filter(
+      (item) => String(item._id) !== String(image._id),
+    );
 
     /*
      * Save MongoDB first.
@@ -1142,29 +642,52 @@ export async function deleteAdminProductImage(
      * deleted.
      */
     await product.save();
-
-    try {
-      await deleteCloudinaryImage(
-        publicId
-      );
-    } catch (error) {
-      console.error(
-        "Cloudinary image deletion failed:",
-        error
-      );
-    }
+    await activateCleanup(assetId);
 
     res.status(200).json({
       success: true,
 
-      message:
-        "Product image removed successfully.",
+      message: "Product image removed successfully.",
 
       product,
 
-      images:
-        product.images,
+      images: product.images,
     });
+  } catch (error) {
+    next(error);
+  }
+}
+export async function reorderAdminProductImages(req, res, next) {
+  try {
+    if (!mongoose.isValidObjectId(req.params.productId))
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid product ID." });
+    const product = await Product.findById(req.params.productId);
+    if (!product)
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found." });
+    const ids = req.body?.imageIds;
+    const current = product.images.map((image) => String(image._id));
+    if (
+      !Array.isArray(ids) ||
+      ids.length !== current.length ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !current.includes(id))
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Provide each saved image ID exactly once.",
+        });
+    }
+    product.images = ids.map((id) =>
+      product.images.find((image) => String(image._id) === id),
+    );
+    await product.save();
+    res.json({ success: true, product, images: product.images });
   } catch (error) {
     next(error);
   }

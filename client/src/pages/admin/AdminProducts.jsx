@@ -1,4 +1,6 @@
 import {
+  useRef,
+  useCallback,
   useEffect,
   useState,
 } from "react";
@@ -55,7 +57,7 @@ export default function AdminProducts() {
   ] = useState("all");
 
   const [
-    loading,
+    loadingFlag,
     setLoading,
   ] = useState(true);
 
@@ -64,19 +66,27 @@ export default function AdminProducts() {
     setError,
   ] = useState("");
 
-  const loadProducts =
-    async () => {
-      try {
-        setLoading(true);
-        setError("");
+  const requestKey = JSON.stringify([
+    search,
+    category,
+    active,
+  ]);
+  const [loadedKey, setLoadedKey] = useState(requestKey);
+  const loading = loadingFlag || loadedKey !== requestKey;
 
-        const result =
-          await getAdminProducts({
+  const requestVersion = useRef(0);
+  const loadProducts = useCallback(() => {
+
+    const version = ++requestVersion.current;
+    return getAdminProducts({
             search,
             category,
             active,
             limit: 50,
-          });
+          }).then((result) => {
+      if (version !== requestVersion.current) return;
+
+        setError("");
 
         setProducts(
           result.products || []
@@ -85,24 +95,33 @@ export default function AdminProducts() {
         setPagination(
           result.pagination
         );
-      } catch (error) {
+
+    }).catch((error) => {
+      if (version !== requestVersion.current) return;
+
         setError(
           error.response?.data
             ?.message ||
             "Unable to load products."
         );
-      } finally {
-        setLoading(false);
-      }
-    };
 
-  useEffect(() => {
-    loadProducts();
-  }, [
+    }).finally(() => {
+      if (version !== requestVersion.current) return;
+
+        setLoadedKey(requestKey);
+        setLoading(false);
+
+    });
+  }, [requestKey,
     search,
     category,
     active,
   ]);
+
+  useEffect(() => {
+    loadProducts();
+    return () => { requestVersion.current += 1; };
+  }, [loadProducts]);
 
   const handleSearch =
     (event) => {
@@ -137,9 +156,7 @@ export default function AdminProducts() {
 
           <button
             type="button"
-            onClick={
-              loadProducts
-            }
+            onClick={() => { setLoading(true); loadProducts(); }}
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-[#0B1F33]"
           >
             <RefreshCw

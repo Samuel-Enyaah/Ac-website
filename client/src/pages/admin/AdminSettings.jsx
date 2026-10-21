@@ -1,4 +1,7 @@
+import SettingsCard from "../../components/ui/AdminFormCard";
+import Field from "../../components/ui/Field";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -30,7 +33,7 @@ import {
 
 import {
   useBusinessSettings,
-} from "../../context/BusinessSettingsContext";
+} from "../../context/BusinessSettingsState";
 
 const initialSettings = {
   businessName: "R&J AC",
@@ -159,14 +162,14 @@ export default function AdminSettings() {
     setSuccess,
   ] = useState("");
 
-  const loadSettings =
-    async () => {
-      try {
-        setLoading(true);
-        setError("");
+  const requestVersion = useRef(0);
+  const loadSettings = useCallback(() => {
 
-        const settings =
-          await getAdminSettings();
+    const version = ++requestVersion.current;
+    return getAdminSettings().then((settings) => {
+      if (version !== requestVersion.current) return;
+
+        setError("");
 
         setForm({
           ...initialSettings,
@@ -182,7 +185,10 @@ export default function AdminSettings() {
             ...settings.socialLinks,
           },
         });
-      } catch (error) {
+
+    }).catch((error) => {
+      if (version !== requestVersion.current) return;
+
         console.error(error);
 
         setError(
@@ -190,33 +196,23 @@ export default function AdminSettings() {
             ?.message ||
             "Unable to load business settings."
         );
-      } finally {
-        setLoading(false);
-      }
-    };
 
-  useEffect(() => {
-    loadSettings();
+    }).finally(() => {
+      if (version !== requestVersion.current) return;
+
+        setLoading(false);
+
+    });
   }, []);
 
   useEffect(() => {
-    if (!selectedLogo) {
-      setPreviewUrl("");
-      return;
-    }
+    loadSettings();
+    return () => { requestVersion.current += 1; };
+  }, [loadSettings]);
 
-    const url =
-      URL.createObjectURL(
-        selectedLogo
-      );
-
-    setPreviewUrl(url);
-
-    return () =>
-      URL.revokeObjectURL(
-        url
-      );
-  }, [selectedLogo]);
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   const resetMessages =
     () => {
@@ -319,9 +315,8 @@ export default function AdminSettings() {
         return;
       }
 
-      setSelectedLogo(
-        file
-      );
+      setSelectedLogo(file);
+      setPreviewUrl(URL.createObjectURL(file));
 
       setError("");
       setSuccess("");
@@ -329,6 +324,7 @@ export default function AdminSettings() {
 
   const handleLogoUpload =
     async () => {
+      if (uploadingLogo || deletingLogo || saving) return;
       if (!selectedLogo) {
         setError(
           "Please choose a logo first."
@@ -364,9 +360,8 @@ export default function AdminSettings() {
           })
         );
 
-        setSelectedLogo(
-          null
-        );
+        setSelectedLogo(null);
+      setPreviewUrl("");
 
         setSuccess(
           "Business logo uploaded successfully."
@@ -394,6 +389,7 @@ export default function AdminSettings() {
 
   const handleLogoDelete =
     async () => {
+      if (uploadingLogo || deletingLogo || saving) return;
       const confirmed =
         window.confirm(
           "Remove the current business logo?"
@@ -422,9 +418,8 @@ export default function AdminSettings() {
           })
         );
 
-        setSelectedLogo(
-          null
-        );
+        setSelectedLogo(null);
+      setPreviewUrl("");
 
         setSuccess(
           "Business logo removed successfully."
@@ -449,6 +444,7 @@ export default function AdminSettings() {
   const handleSubmit =
     async (event) => {
       event.preventDefault();
+      if (uploadingLogo || deletingLogo || saving) return;
 
       try {
         setSaving(true);
@@ -616,9 +612,7 @@ export default function AdminSettings() {
 
         <button
           type="button"
-          onClick={
-            loadSettings
-          }
+          onClick={() => { setLoading(true); loadSettings(); }}
           className="inline-flex w-fit items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-[#0B1F33]"
         >
           <RefreshCw
@@ -631,13 +625,13 @@ export default function AdminSettings() {
       </section>
 
       {error && (
-        <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+        <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="mt-6 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-700">
+        <div role="status" className="mt-6 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-semibold text-green-700">
 
           <CheckCircle2
             size={18}
@@ -1363,73 +1357,6 @@ export default function AdminSettings() {
 
 const inputClass =
   "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#17212B] outline-none transition placeholder:text-gray-400 focus:border-[#1687D9] focus:ring-4 focus:ring-[#1687D9]/10";
-
-function SettingsCard({
-  icon: Icon,
-  title,
-  description,
-  children,
-}) {
-  return (
-    <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
-
-      <div className="flex items-start gap-3 border-b border-gray-100 pb-5">
-
-        {Icon && (
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EAF6FF] text-[#1687D9]">
-            <Icon
-              size={19}
-            />
-          </div>
-        )}
-
-        <div>
-
-          <h2 className="font-bold text-[#0B1F33]">
-            {title}
-          </h2>
-
-          <p className="mt-1 text-sm text-gray-500">
-            {description}
-          </p>
-
-        </div>
-
-      </div>
-
-      <div className="pt-6">
-        {children}
-      </div>
-
-    </section>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}) {
-  return (
-    <label className="block">
-
-      <span className="mb-2 block text-sm font-semibold text-[#0B1F33]">
-
-        {label}
-
-        {required && (
-          <span className="ml-1 text-red-500">
-            *
-          </span>
-        )}
-
-      </span>
-
-      {children}
-
-    </label>
-  );
-}
 
 function formatFileSize(
   bytes

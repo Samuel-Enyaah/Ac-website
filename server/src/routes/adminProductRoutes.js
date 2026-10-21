@@ -1,6 +1,7 @@
 import express from "express";
 
 import {
+  reorderAdminProductImages,
   adjustProductInventory,
   createAdminProduct,
   deleteAdminProductImage,
@@ -69,5 +70,7 @@ router.delete(
   "/:productId/images",
   deleteAdminProductImage
 );
+
+router.patch("/:productId/images/order", reorderAdminProductImages);
 
 export default router;

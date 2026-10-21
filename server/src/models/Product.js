@@ -58,9 +58,15 @@ const productSchema = new mongoose.Schema(
 
     stock: {
       type: Number,
+      validate: { validator: Number.isInteger, message: "Stock must be a whole number." },
       default: 0,
       min: 0,
     },
+
+    // Internal idempotency ledger; excluded from public and admin catalogue responses.
+    reservedAttemptIds: { type: [String], default: [], select: false },
+    releasedReservationIds: { type: [String], default: [], select: false },
+    restoredOrderIds: { type: [mongoose.Schema.Types.ObjectId], default: [], select: false },
 
     images: [
       {
@@ -87,6 +93,7 @@ const productSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    optimisticConcurrency: true,
   }
 );
 

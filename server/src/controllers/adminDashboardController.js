@@ -1,12 +1,10 @@
+import ActivityLog from "../models/ActivityLog.js";
+import NotificationJob from "../models/NotificationJob.js";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import ServiceBooking from "../models/ServiceBooking.js";
 
-export async function getAdminDashboard(
-  req,
-  res,
-  next
-) {
+export async function getAdminDashboard(req, res, next) {
   try {
     const [
       totalProducts,
@@ -76,7 +74,7 @@ export async function getAdminDashboard(
             "status",
             "paymentStatus",
             "createdAt",
-          ].join(" ")
+          ].join(" "),
         )
         .lean(),
 
@@ -94,7 +92,7 @@ export async function getAdminDashboard(
             "preferredDate",
             "location",
             "createdAt",
-          ].join(" ")
+          ].join(" "),
         )
         .lean(),
 
@@ -108,21 +106,49 @@ export async function getAdminDashboard(
           stock: 1,
         })
         .limit(5)
-        .select(
-          "name slug category stock"
-        )
+        .select("name slug category stock")
         .lean(),
     ]);
 
-    const paidRevenue =
-      paidRevenueResult[0]?.total ||
-      0;
+    const [
+      actionOrders,
+      unassignedBookings,
+      inProgressBookings,
+      failedNotifications,
+      recentActivity,
+      notificationFailures,
+    ] = await Promise.all([
+      Order.countDocuments({
+        status: {
+          $in: ["confirmed", "processing", "ready", "out-for-delivery"],
+        },
+      }),
+      ServiceBooking.countDocuments({
+        assignedStaff: null,
+        status: { $nin: ["completed", "cancelled"] },
+      }),
+      ServiceBooking.countDocuments({ status: "in-progress" }),
+      NotificationJob.countDocuments({ status: "failed" }),
+      ActivityLog.find().sort({ createdAt: -1 }).limit(10).lean(),
+      NotificationJob.find({ status: "failed" })
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .select("-payload")
+        .lean(),
+    ]);
+    const paidRevenue = paidRevenueResult[0]?.total || 0;
 
     res.status(200).json({
       success: true,
 
       dashboard: {
+        recentActivity,
+        notificationFailures,
         stats: {
+          actionOrders,
+          unassignedBookings,
+          inProgressBookings,
+          failedNotifications,
           totalProducts,
           totalOrders,
           pendingOrders,
@@ -132,88 +158,55 @@ export async function getAdminDashboard(
           paidRevenue,
         },
 
-        recentOrders:
-          recentOrders.map(
-            (order) => ({
-              id: order._id,
+        recentOrders: recentOrders.map((order) => ({
+          id: order._id,
 
-              orderNumber:
-                order.orderNumber,
+          orderNumber: order.orderNumber,
 
-              customerName:
-                order.customer
-                  ?.fullName ||
-                "Customer",
+          customerName: order.customer?.fullName || "Customer",
 
-              phone:
-                order.customer?.phone ||
-                "",
+          phone: order.customer?.phone || "",
 
-              total:
-                order.total,
+          total: order.total,
 
-              status:
-                order.status,
+          status: order.status,
 
-              paymentStatus:
-                order.paymentStatus,
+          paymentStatus: order.paymentStatus,
 
-              createdAt:
-                order.createdAt,
-            })
-          ),
+          createdAt: order.createdAt,
+        })),
 
-        recentBookings:
-          recentBookings.map(
-            (booking) => ({
-              id: booking._id,
+        recentBookings: recentBookings.map((booking) => ({
+          id: booking._id,
 
-              bookingNumber:
-                booking.bookingNumber,
+          bookingNumber: booking.bookingNumber,
 
-              customerName:
-                booking.customer?.name ||
-                "Customer",
+          customerName: booking.customer?.name || "Customer",
 
-              phone:
-                booking.customer?.phone ||
-                "",
+          phone: booking.customer?.phone || "",
 
-              serviceType:
-                booking.serviceType,
+          serviceType: booking.serviceType,
 
-              status:
-                booking.status,
+          status: booking.status,
 
-              preferredDate:
-                booking.preferredDate,
+          preferredDate: booking.preferredDate,
 
-              location:
-                booking.location,
+          location: booking.location,
 
-              createdAt:
-                booking.createdAt,
-            })
-          ),
+          createdAt: booking.createdAt,
+        })),
 
-        lowStockItems:
-          lowStockItems.map(
-            (product) => ({
-              id: product._id,
+        lowStockItems: lowStockItems.map((product) => ({
+          id: product._id,
 
-              name:
-                product.name,
+          name: product.name,
 
-              slug:
-                product.slug,
+          slug: product.slug,
 
-              category:
-                product.category,
+          category: product.category,
 
-              stock:
-                product.stock,
-            })
-          ),
+          stock: product.stock,
+        })),
       },
     });
   } catch (error) {

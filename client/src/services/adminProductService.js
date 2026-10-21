@@ -102,10 +102,11 @@ export async function adjustAdminInventory(
   productId,
   payload
 ) {
-  return adjustProductInventory(
+  const result = await adjustProductInventory(
     productId,
     payload
   );
+  return result.product;
 }
 
 /*
@@ -113,7 +114,7 @@ export async function adjustAdminInventory(
  */
 export async function uploadAdminProductImages(
   productId,
-  files
+  files, onUploadProgress
 ) {
   const formData =
     new FormData();
@@ -134,7 +135,7 @@ export async function uploadAdminProductImages(
   const response =
     await api.post(
       `/admin/products/${productId}/images`,
-      formData
+      formData, { timeout: 120000, onUploadProgress }
     );
 
   return response.data;
@@ -145,17 +146,21 @@ export async function uploadAdminProductImages(
  */
 export async function deleteAdminProductImage(
   productId,
-  publicId
+  publicId, imageId
 ) {
   const response =
     await api.delete(
       `/admin/products/${productId}/images`,
       {
         data: {
-          publicId,
+          publicId, imageId,
         },
       }
     );
 
+  return response.data;
+}
+export async function reorderAdminProductImages(productId, imageIds) {
+  const response = await api.patch(`/admin/products/${productId}/images/order`, { imageIds });
   return response.data;
 }

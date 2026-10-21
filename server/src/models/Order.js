@@ -1,3 +1,4 @@
+import { operationsFields } from "./operationsFields.js";
 import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema(
@@ -58,10 +59,7 @@ const orderSchema = new mongoose.Schema(
 
     fulfillmentMethod: {
       type: String,
-      enum: [
-        "delivery",
-        "pickup",
-      ],
+      enum: ["delivery", "pickup"],
       required: true,
     },
 
@@ -118,22 +116,13 @@ const orderSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: [
-        "pay-on-delivery",
-        "mobile-money",
-        "card",
-      ],
+      enum: ["pay-on-delivery", "mobile-money", "card"],
       required: true,
     },
 
     paymentStatus: {
       type: String,
-      enum: [
-        "pending",
-        "paid",
-        "failed",
-        "refunded",
-      ],
+      enum: ["pending", "paid", "failed", "refunded"],
       default: "pending",
     },
 
@@ -171,12 +160,13 @@ const orderSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-const Order = mongoose.model(
-  "Order",
-  orderSchema
-);
+orderSchema.add(operationsFields);
+orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ assignedStaff: 1, status: 1 });
+orderSchema.index({ "eventOutbox.createdAt": 1 });
+const Order = mongoose.model("Order", orderSchema);
 
 export default Order;

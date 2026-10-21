@@ -17,7 +17,7 @@ import {
 
 import {
   useAdminAuth,
-} from "../../context/AdminAuthContext";
+} from "../../context/AdminAuthState";
 
 export default function AdminLogin() {
   const {
