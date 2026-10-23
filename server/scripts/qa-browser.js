@@ -26,6 +26,8 @@ const { chromium } = require(
 );
 const qaCache = join(tmpdir(), `rj-media-vite-${process.pid}`);
 dotenv.config({ quiet: true });
+process.env.EMAIL_PROVIDER = ""; // Automated QA must never send external email.
+
 process.env.NODE_ENV = "test";
 if (process.env.RUN_ISOLATED_QA !== "1")
   throw new Error("Explicit isolated QA opt-in required.");

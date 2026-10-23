@@ -16,6 +16,8 @@ import { deleteAdminProductImage, uploadAdminProductImages } from "../src/contro
 import { getCloudinary } from "../src/config/cloudinary.js";
 import { Writable } from "node:stream";
 dotenv.config({ path: new URL("../.env", import.meta.url), quiet: true });
+process.env.EMAIL_PROVIDER = ""; // Automated QA must never send external email.
+
 if (process.env.RUN_ISOLATED_QA !== "1") throw new Error("Explicit isolated QA opt-in required.");
 const dbName = `rj_phase7a_reliability_${Date.now()}_${process.pid}`;
 before(async () => {

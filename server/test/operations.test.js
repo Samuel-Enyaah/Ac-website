@@ -116,7 +116,7 @@ test("provider errors never expose credentials, response bodies or recipient dat
     assert.ok(!sanitizedNotificationError(error).includes(secret));
 });
 test("unconfigured adapter fails honestly and explicit test adapter deduplicates simulations", async () => {
-  await assert.rejects(configuredTransport().send({}), {
+  await assert.rejects(configuredTransport({}).send({}), {
     notificationCode: "unconfigured",
   });
   const adapter = createTestTransport();

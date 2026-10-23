@@ -1,3 +1,4 @@
+import NotificationMonitoring from "../../components/admin/NotificationMonitoring";
 import { Link } from "react-router-dom";
 import useAdminResource from "../../hooks/useAdminResource";
 import {
@@ -72,6 +73,7 @@ export default function AdminDashboard() {
           </Link>
         ))}
       </section>
+      <NotificationMonitoring health={d.notificationHealth} />
       <div className="grid gap-6 xl:grid-cols-2">
         <Panel title="Recent orders">
           <ul className="space-y-4">
@@ -132,20 +134,25 @@ export default function AdminDashboard() {
             attention. Manual contact links are available from the related
             record.
           </p>
-          {d.notificationFailures?.map((job) => (
-            <div className="ops-record" key={job._id}>
-              <p className="font-semibold">{job.template.replace(".", " ")}</p>
-              <p className="ops-muted">{job.recipient}</p>
-              <p className="mt-2 text-sm text-red-700">{job.lastError}</p>
-              <Link
-                className="ops-link"
-                to={entityPath(job.entityType, job.entityId)}
-              >
-                Review {job.entityType}
-              </Link>
-            </div>
-          ))}
-          {!d.notificationFailures?.length && (
+          {(d.notificationHealth?.problems || d.notificationFailures)?.map(
+            (job) => (
+              <div className="ops-record" key={job._id}>
+                <p className="font-semibold">
+                  {job.template.replace(".", " ")}
+                </p>
+                <p className="ops-muted">{job.recipient}</p>
+                <p className="mt-2 text-sm text-red-700">{job.lastError}</p>
+                <Link
+                  className="ops-link"
+                  to={entityPath(job.entityType, job.entityId)}
+                >
+                  Review {job.entityType}
+                </Link>
+              </div>
+            ),
+          )}
+          {!(d.notificationHealth?.problems || d.notificationFailures)
+            ?.length && (
             <p className="ops-muted">No failed notifications recorded.</p>
           )}
           <Link className="ops-link" to="/admin/notifications?status=failed">

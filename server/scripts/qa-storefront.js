@@ -20,6 +20,8 @@ import { ADMIN_COOKIE } from "../src/utils/adminAuth.js";
 
 const qaCache = join(tmpdir(), `rj-storefront-vite-${process.pid}`);
 dotenv.config({ quiet: true });
+process.env.EMAIL_PROVIDER = ""; // Automated QA must never send external email.
+
 process.env.NODE_ENV = "test";
 if (process.env.RUN_ISOLATED_QA !== "1")
   throw new Error("Explicit isolated QA opt-in required.");
@@ -153,6 +155,8 @@ try {
   ]);
   page = await context.newPage();
   page.setDefaultTimeout(15000);
+  // Keep interaction assertions tight while allowing the isolated cold build.
+  page.setDefaultNavigationTimeout(60000);
   page.on("console", (message) => {
     if (
       message.type() === "error" &&
@@ -608,6 +612,13 @@ try {
     );
     for (const width of [320, 375, 390, 430, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: width < 768 ? 844 : 1000 });
+      // Wait for two layout frames after Chromium reports a new viewport.
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
       assert.ok(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,

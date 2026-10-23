@@ -50,29 +50,10 @@ The existing non-overlapping recovery worker additionally projects up to 25 pend
 
 History is retained without TTL deletion. Detail histories are limited to the newest 100 activity/notification records; the notification queue is paginated. Each order/booking allows 500 internal notes and 500 assignments to avoid unbounded embedded histories. A larger operational archive/search UI is future work. Do not manually remove idempotency keys, stock markers, event keys or completed notification jobs while retries may occur.
 
-## Notification transport boundary
+## Notification transport boundary (updated in Phase 7D)
 
-No email provider is configured or added in this phase. Normal execution uses the explicit unconfigured adapter: jobs fail visibly with a sanitized reason, and no message is sent. Administrators have telephone, email, WhatsApp and SMS links for manual follow-up. Opening a link never marks a notification as delivered. WhatsApp/SMS are supported channel concepts, not paid-provider integrations.
+The existing outbox, leases, stock and media recovery remain in place. Phase 7D adds one Resend email adapter, signed delivery webhooks, controlled attempt history, provider-degraded operation and admin monitoring. Read [NOTIFICATIONS.md](NOTIFICATIONS.md) for the current configuration, status meanings, 23-hour safe replay window, permanent failures, suppression and manual retry rules. The Phase 7C reports preserve the historical unconfigured-adapter baseline.
 
-The server creates email jobs only when the original customer request includes email. Templates cover order received/confirmed/ready for pickup/out for delivery/delivered/cancelled and booking received/confirmed/staff assigned/in progress/completed/cancelled. Pending templates explicitly avoid appointment or delivery confirmation. Templates use the real reference and a snapshot of public BusinessSettings contact information at projection time. Internal notes and assignment notes are never template inputs. Assignment notification occurs when the workflow is explicitly marked technician-assigned.
+Notification list filters now include channel, entity type, template, status, queued date range in UTC, reference, recipient, ordering and page. GET `/api/v1/admin/operations/notifications/health` requires Admin authentication. POST `/api/v1/webhooks/resend` instead uses raw-body provider signature verification and its own rate limit; it does not use the Admin cookie. Public order/booking receipts are unchanged.
 
-`notificationTransports.js` defines an adapter with:
-
-```js
-{
-  name: "approved-provider",
-  supportsIdempotency: true,
-  async send({ channel, recipient, payload, idempotencyKey, signal }) {
-    // Return { accepted: true } only after confirmed provider acceptance.
-    // Throw a sanitized/classified failure otherwise.
-  }
-}
-```
-
-A future provider needs an approved account, verified sender/address/domain, appropriate DNS setup, an API credential or SMTP credential stored only server-side, and an adapter selected by server configuration. No credential values or placeholder secrets were written to `.env`. The provider must guarantee durable idempotency for the stable event key across timeouts, process restarts and manual retries; an SMTP/provider transport without that guarantee requires a delivery reconciliation design first. A database lease alone cannot guarantee exactly-once delivery to an external service. Do not enable an adapter by merely asserting the capability without provider evidence.
-
-Jobs retain immutable recipient, event key, channel/template and entity identity. Worker claims use a unique lease token, a two-minute lease measured at each claim, a 30-second transport deadline and fenced completion updates. Expired leases are reclaimable with the same event key; stale workers cannot overwrite a new owner's result. Retries back off from 30 seconds exponentially (capped at 24 hours), with five attempts per cycle. Permanent failures and exhausted cycles become failed. Manual retry resets the cycle counter, preserves lifetime attempts/event/recipient/payload, and records the requesting admin. Errors use fixed safe messages rather than raw provider content.
-
-`sent` means provider acceptance, not independently verified inbox delivery. The UI states this. The explicitly injected test adapter records `simulated` with `simulatedAt` and leaves `sentAt` empty; it is never activated by an environment switch in the normal server. The isolated acceptance-contract test uses a stub to exercise the sent state, with no external messages. Future bounce/delivery webhooks and operational monitoring require a real provider and are outside Phase 7C.
-
-No deployment, production-data migration, customer accounts, payment integration, quote/invoice system, return workflow or credential rotation is included. Temporary Root Cloudinary credentials remain local and must be replaced before any future deployment.
+Legacy `sent` means provider acceptance and is displayed as accepted. Delivered means signed confirmation of recipient-mail-server delivery, never guaranteed inbox placement or reading. Explicit test injection remains labelled simulated. No paid WhatsApp/SMS integration, deployment, customer accounts, payment integration, quotes/invoices, returns or credential rotation is included.

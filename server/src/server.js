@@ -23,9 +23,15 @@ const startServer = async () => {
     );
     // Unique indexes must exist before accepting concurrent idempotent requests.
     const operationModels = await Promise.all(
-      ["ServiceBooking", "ActivityLog", "NotificationJob", "Staff"].map(
-        (name) => import(`./models/${name}.js`),
-      ),
+      [
+        "ServiceBooking",
+        "ActivityLog",
+        "NotificationJob",
+        "NotificationAttempt",
+        "NotificationWebhookEvent",
+        "NotificationWorkerState",
+        "Staff",
+      ].map((name) => import(`./models/${name}.js`)),
     );
     await Promise.all([
       ReservationAttempt.init(),

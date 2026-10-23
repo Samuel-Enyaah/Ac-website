@@ -1,5 +1,6 @@
 import { recoverOperations } from "./operationsOutbox.js";
 import { runNotifications } from "./notifications.js";
+import { recoverNotificationWebhooks } from "./notificationWebhooks.js";
 import { runMediaCleanup } from "./mediaCleanup.js";
 import { reconcileReservations } from "./orderReservations.js";
 import { restoreOrderStock } from "../controllers/adminOrderController.js";
@@ -24,7 +25,9 @@ export async function recoverOnce() {
   }
   await runMediaCleanup();
   await recoverOperations();
+  await recoverNotificationWebhooks();
   await runNotifications();
+  await recoverNotificationWebhooks();
 }
 export function startRecoveryWorker() {
   let stopped = false;

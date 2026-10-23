@@ -1055,6 +1055,11 @@
     background: #fff3f3;
     color: #a02525;
   }
+  .ops-alert.warning {
+    border-color: #e5c985;
+    background: #fff9e9;
+    color: #755115;
+  }
   .ops-filters {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));

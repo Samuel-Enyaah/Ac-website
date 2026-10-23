@@ -24,6 +24,8 @@ import { createTestTransport } from "../src/services/notificationTransports.js";
 
 const qaCache = join(tmpdir(), `rj-operations-vite-${process.pid}`);
 dotenv.config({ path: new URL("../.env", import.meta.url), quiet: true });
+process.env.EMAIL_PROVIDER = ""; // Automated QA must never send external email.
+
 process.env.NODE_ENV = "test";
 if (process.env.RUN_ISOLATED_QA !== "1")
   throw new Error("Explicit isolated QA opt-in required.");
@@ -162,6 +164,8 @@ try {
   ]);
   page = await context.newPage();
   page.setDefaultTimeout(15000);
+  // The isolated Vite cache must compile on its first navigation.
+  page.setDefaultNavigationTimeout(60000);
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
@@ -416,6 +420,152 @@ try {
     await page.locator(`a[href="/admin/bookings/${booking.id}"]`).count(),
   );
   check("staff role/skills/status filters and customer related work timeline");
+  const fixtureJobs = [];
+  for (let n = 0; n < 28; n++)
+    fixtureJobs.push(
+      await NotificationJob.create({
+        eventKey: crypto.randomUUID(),
+        channel: "email",
+        template: "order.confirmed",
+        recipient: "notification-fixture@example.invalid",
+        entityType: "order",
+        entityId: order.id,
+        reference: order.orderNumber,
+        payload: {
+          reference: order.orderNumber,
+          subject: "QA fixture",
+          text: "No external email sent.",
+        },
+        status:
+          n === 0
+            ? "delivered"
+            : n === 1
+              ? "accepted"
+              : n === 2
+                ? "retrying"
+                : n === 3
+                  ? "pending"
+                  : "failed",
+        provider: "resend",
+        acceptedAt: n < 2 ? new Date() : undefined,
+        deliveredAt: n === 0 ? new Date() : undefined,
+        failureCode: n >= 4 ? "configuration" : "",
+        lastError: n >= 4 ? "Email sender configuration is incomplete." : "",
+      }),
+    );
+  await go("/admin/notifications");
+  await page
+    .getByLabel("Recipient search", { exact: true })
+    .fill("notification-fixture@example.invalid");
+  await page
+    .getByRole("button", { name: "Apply filters", exact: true })
+    .click();
+  await page.getByText("28 matching notifications", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByText("Page 2 of 2", { exact: true }).waitFor();
+  assert.equal(await page.locator("[data-notification-id]").count(), 3);
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await page.getByText("Page 1 of 2", { exact: true }).waitFor();
+  check(
+    "notification recipient filter and pagination preserve matching results",
+  );
+  for (const [label, value] of [
+    ["Channel", "email"],
+    ["Record type", "order"],
+    ["Notification event", "order.confirmed"],
+    ["Notification ordering", "oldest"],
+  ]) {
+    await page.getByLabel(label, { exact: true }).selectOption(value);
+    await page.waitForLoadState("networkidle");
+  }
+  await page
+    .getByLabel("Reference search", { exact: true })
+    .fill(order.orderNumber);
+  const today = new Date().toISOString().slice(0, 10);
+  await page.getByLabel("From date (UTC)", { exact: true }).fill(today);
+  await page.getByLabel("To date (UTC)", { exact: true }).fill(today);
+  await page
+    .getByRole("button", { name: "Apply filters", exact: true })
+    .click();
+  await page.getByText("28 matching notifications", { exact: true }).waitFor();
+  for (const [state, label] of [
+    ["accepted", "Accepted by provider"],
+    ["delivered", "Delivered to mail server"],
+    ["failed", "Failed"],
+  ]) {
+    await page
+      .getByLabel("Notification status", { exact: true })
+      .selectOption(state);
+    await page.waitForLoadState("networkidle");
+    const expected = state === "failed" ? 24 : 1;
+    await page
+      .getByText(`${expected} matching notifications`, { exact: true })
+      .waitFor();
+    await page
+      .locator("[data-notification-id] .ops-badge")
+      .filter({ hasText: label })
+      .first()
+      .waitFor();
+    assert.equal(
+      await page
+        .locator("[data-notification-id] .ops-badge")
+        .filter({ hasText: label })
+        .count(),
+      expected,
+      `${state} badge count`,
+    );
+  }
+  check(
+    "notification channel, entity, event, reference, date, ordering and delivery-state filters",
+  );
+  await page
+    .getByLabel("Notification status", { exact: true })
+    .selectOption("delivered");
+  await page.waitForLoadState("networkidle");
+  await page
+    .locator(`[data-notification-id="${fixtureJobs[0]._id}"]`)
+    .getByRole("link", { name: "Open order", exact: true })
+    .click();
+  await page
+    .getByRole("heading", { name: order.orderNumber, exact: true })
+    .waitFor();
+  await page
+    .locator(`[data-notification-id="${fixtureJobs[0]._id}"]`)
+    .getByText("Delivered to mail server", { exact: true })
+    .first()
+    .waitFor();
+  await go(`/admin/bookings/${booking.id}`);
+  await page
+    .getByRole("heading", { name: "Notification history", exact: true })
+    .waitFor();
+  assert.ok(await page.locator("[data-notification-id]").count());
+  check(
+    "notification related-record navigation and order/booking delivery histories",
+  );
+  await go("/admin");
+  for (const [status, label] of [
+    ["pending", "Queued emails"],
+    ["retrying", "Retrying emails"],
+    ["failed", "Failed emails"],
+  ]) {
+    const card = page.getByRole("link", { name: new RegExp(label) });
+    assert.ok(Number(await card.locator("p").innerText()) > 0);
+    assert.equal(
+      await card.getAttribute("href"),
+      `/admin/notifications?status=${status}`,
+    );
+  }
+  await page.getByRole("link", { name: /Failed emails/ }).click();
+  await page
+    .getByRole("heading", { name: "Notifications", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.getByLabel("Notification status", { exact: true }).inputValue(),
+    "failed",
+  );
+  check(
+    "dashboard queued/retrying/failed counts link to accurate notification filters",
+  );
   const views = [
     ["dashboard", "/admin"],
     ["orders", "/admin/orders"],
@@ -502,12 +652,30 @@ try {
     name: "Admin navigation",
     exact: true,
   });
+  await menu.waitFor({ state: "visible" });
+  await page.waitForFunction(() =>
+    document
+      .querySelector('[role="dialog"][aria-label="Admin navigation"]')
+      ?.contains(document.activeElement),
+  );
   for (let i = 0; i < 16; i++) {
     await page.keyboard.press("Tab");
-    assert.ok(await menu.evaluate((el) => el.contains(document.activeElement)));
+    assert.ok(
+      await menu.evaluate((el) => el.contains(document.activeElement)),
+      "Mobile menu must contain focus after Tab",
+    );
   }
   await page.keyboard.press("Escape");
-  assert.ok(await trigger.evaluate((el) => el === document.activeElement));
+  await menu.waitFor({ state: "hidden" });
+  await page.waitForFunction(
+    () =>
+      document.activeElement?.getAttribute("aria-label") ===
+      "Open admin navigation",
+  );
+  assert.ok(
+    await trigger.evaluate((el) => el === document.activeElement),
+    "Escape must restore navigation trigger focus",
+  );
   check("mobile admin navigation focus containment and Escape restoration");
   assert.deepEqual(errors, []);
   check("no unexpected console errors or runtime exceptions");

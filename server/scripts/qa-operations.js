@@ -25,6 +25,8 @@ import { createTestTransport } from "../src/services/notificationTransports.js";
 import { createIdempotentBooking } from "../src/services/bookingRequests.js";
 
 dotenv.config({ path: new URL("../.env", import.meta.url), quiet: true });
+process.env.EMAIL_PROVIDER = ""; // Automated QA must never send external email.
+
 if (process.env.RUN_ISOLATED_QA !== "1")
   throw new Error("Set RUN_ISOLATED_QA=1 to run isolated operations QA.");
 const dbName = `rj_phase7c_qa_${Date.now()}_${process.pid}`;
@@ -548,7 +550,7 @@ try {
     const now = new Date();
     await runNotifications({ transport, now });
     const failed = await NotificationJob.findById(job._id);
-    assert.equal(failed.status, "pending");
+    assert.equal(failed.status, "retrying");
     assert.equal(failed.attempts, 1);
     assert.ok(failed.nextRetryAt > now);
     assert.ok(!failed.lastError.includes("NEVER_LOG_THIS"));
@@ -559,14 +561,14 @@ try {
     const retried = await NotificationJob.findById(job._id);
     assert.equal(retried.status, "simulated");
     assert.equal(retried.attempts, 2);
-    assert.ok(simulation.receipts.has(job.eventKey));
+    assert.ok(simulation.receipts.has(`${job.eventKey}:delivery:0`));
   });
   await test("permanent unconfigured failures are visible and retry rejects recipient overrides", async () => {
     const job = await makeJob();
     await runNotifications();
     const failed = await NotificationJob.findById(job._id);
     assert.equal(failed.status, "failed");
-    assert.match(failed.lastError, /no provider/);
+    assert.match(failed.lastError, /no email provider/);
     await request(
       `/admin/operations/notifications/${job._id}/retry`,
       "POST",
@@ -618,7 +620,7 @@ try {
       (await NotificationJob.findById(job._id)).status,
       "processing",
     );
-    await simulation.send({ idempotencyKey: job.eventKey });
+    await simulation.send({ idempotencyKey: `${job.eventKey}:delivery:0` });
     const before = simulation.receipts.size;
     await Promise.all([
       runNotifications({
@@ -665,7 +667,7 @@ try {
       "failed",
     );
   });
-  await test("provider acceptance contract records sent once under concurrent workers", async () => {
+  await test("provider acceptance contract records acceptance once under concurrent workers", async () => {
     const job = await makeJob();
     let calls = 0;
     // Injected adapter contract test only; no external message is sent.
@@ -675,7 +677,7 @@ try {
       async send(message) {
         calls++;
         assert.equal(message.recipient, "trusted@example.invalid");
-        return { accepted: true };
+        return { accepted: true, providerMessageId: randomUUID() };
       },
     };
     await Promise.all([
@@ -684,8 +686,8 @@ try {
     ]);
     const accepted = await NotificationJob.findById(job._id);
     assert.equal(calls, 1);
-    assert.equal(accepted.status, "sent");
-    assert.ok(accepted.sentAt);
+    assert.equal(accepted.status, "accepted");
+    assert.ok(accepted.acceptedAt);
     assert.equal(accepted.simulatedAt, null);
     await runNotifications({ transport: adapter });
     assert.equal(calls, 1);
@@ -718,7 +720,7 @@ try {
         },
       },
     );
-    release({ accepted: true });
+    release({ accepted: true, providerMessageId: randomUUID() });
     await running;
     const fenced = await NotificationJob.findById(job._id);
     assert.equal(fenced.status, "failed");

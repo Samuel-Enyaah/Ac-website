@@ -14,6 +14,8 @@ import { ADMIN_COOKIE } from "../src/utils/adminAuth.js";
 import { getCloudinary } from "../src/config/cloudinary.js";
 import { deleteCloudinaryImage } from "../src/utils/cloudinaryMedia.js";
 dotenv.config({ quiet: true });
+process.env.EMAIL_PROVIDER = ""; // Automated QA must never send external email.
+
 if (process.env.RUN_ISOLATED_QA !== "1") throw new Error("Set RUN_ISOLATED_QA=1 to run isolated integration QA.");
 const dbName = `rj_phase7a_qa_${Date.now()}`;
 const assets = new Set();

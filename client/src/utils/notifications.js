@@ -1,0 +1,26 @@
+export const notificationStatusLabels = {
+  pending: "Queued",
+  processing: "Processing",
+  retrying: "Retrying",
+  accepted: "Accepted by provider",
+  sent: "Accepted by provider",
+  delivered: "Delivered to mail server",
+  bounced: "Bounced",
+  complained: "Spam complaint",
+  failed: "Failed",
+  simulated: "Simulated",
+};
+export const notificationTemplateLabels = {
+  "order.pending": "Order received",
+  "order.confirmed": "Order confirmed",
+  "order.ready": "Ready for pickup",
+  "order.out-for-delivery": "Out for delivery",
+  "order.delivered": "Order delivered",
+  "order.cancelled": "Order cancelled",
+  "booking.pending": "Service request received",
+  "booking.confirmed": "Booking confirmed",
+  "booking.technician-assigned": "Service staff assigned",
+  "booking.in-progress": "Service in progress",
+  "booking.completed": "Service completed",
+  "booking.cancelled": "Booking cancelled",
+};

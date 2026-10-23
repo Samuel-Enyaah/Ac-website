@@ -105,3 +105,29 @@ The operations browser runner uses a separate `rj_phase7c_browser_<timestamp>_<p
 The storefront runner now also deliberately discards a successful real booking response, reloads with a different service query, verifies the original form is restored/locked, retries the exact key and payload, and asserts only one booking exists. The real-media browser runner confirms cancellation through the new consequence dialog.
 
 All three browser runners use separate process-specific Vite caches beneath TEMP, validate the cache parent before cleanup, and preserve the isolated API-origin guard. This prevents dependency-cache collisions between concurrent test servers. No application credentials or `.env` files are changed.
+
+
+## Phase 7D notification verification
+
+Read [notification operations](../docs/NOTIFICATIONS.md). Run from `server`:
+
+```powershell
+$env:RUN_ISOLATED_QA='1'
+node scripts/qa-notifications.js
+node scripts/qa-operations.js
+node scripts/qa-operations-browser.js
+node scripts/qa-email-preview.js
+node scripts/qa-live-email.js
+```
+
+`qa-notifications.js` uses a unique `rj_phase7d_notifications_<timestamp>_<pid>` database and verifies the exact name before cleanup. Its real adapter receives injected HTTP responses; Svix fixtures use a process-local test secret. It covers accepted IDs, missing/invalid signatures, duplicate/out-of-order/unknown events, webhook-before-response recovery, bounce/complaint/suppression, old-generation events, 429 sender/body stability, timeout retention boundaries, trusted manual retries, stale projection fencing, immutable payloads, crash/outbox recovery, monitoring thresholds, filters/pagination, public/audit privacy and degraded order/booking/stock behavior. It never sends external email.
+
+The no-database unit suite adds provider classification/timeout/configuration, verification, template escaping, status precedence, legacy privacy and filter validation. Operations integration retains lease expiry, stale worker completion, exhausted-cycle, simulated delivery and business workflow coverage. All automated regression scripts force `EMAIL_PROVIDER` blank after loading `.env`, even if real delivery is enabled locally.
+
+The operations browser suite adds recipient and combined filters, pagination, accepted/delivered/failed fixtures, related-record navigation, order/booking histories and dashboard queued/retrying/failure links. All ten admin views still receive seven width checks. It waits for responsive layout and React focus restoration before asserting. Initial sidebar focus is now verified explicitly; the shared modal hook waits for the opening target to become visible, cancels on close, and does not steal focus already inside the panel. Storefront width measurements wait two animation frames after resizing; no application overflow rules were weakened. The two expanded suites allow 60 seconds for cold Vite navigation while keeping interaction assertions at 15 seconds. Run browser suites sequentially on resource-constrained hosts.
+
+`qa-email-preview.js` creates 12 HTML files, 12 plain-text files and 24 browser screenshots in `qa-artifacts/phase7d/emails/`. It checks 320/600 px widths, references, contact links, plain-text content and browser exceptions. This does not establish actual inbox rendering.
+
+Live QA exits BLOCKED (code 2) unless configured sender credentials, `EMAIL_QA_SENDER_VERIFIED=true`, one to three explicit `EMAIL_QA_RECIPIENTS`, and process flag `RUN_LIVE_EMAIL_QA=1` are all present. It does not read customer records. An enabled run sends one developer-labelled email per listed address, persists/checks provider IDs in a disposable database, reports only safe results, then cleans that database. Do not repeat an uncertain send until provider records are reconciled. No environment file, DNS record, tunnel or deployment is changed by any QA runner.
+
+Continue the full lint/unit/build/syntax/reliability/general integration/storefront/admin/real-media gates. Phase 7D adds `svix` for signature verification; Cloudinary code and existing dependency versions are otherwise preserved.

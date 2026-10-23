@@ -5,6 +5,9 @@ import BusinessSettings from "../models/BusinessSettings.js";
 import ActivityLog from "../models/ActivityLog.js";
 import NotificationJob from "../models/NotificationJob.js";
 import { renderNotification } from "./notificationTemplates.js";
+import { operationEvent } from "./operationEvents.js";
+import { validEmail } from "./emailConfiguration.js";
+import { notificationSummaries } from "./notificationReads.js";
 
 const models = {
   order: Order,
@@ -35,7 +38,7 @@ export async function projectOperations(type, id) {
       { eventId: event.eventId },
       { ...audit, entityType: type, entityId: id },
     );
-    if (notification?.template && notification.recipient) {
+    if (notification?.template && validEmail(notification.recipient)) {
       const settings =
         (await BusinessSettings.findOne({ key: "main" }).lean()) ||
         new BusinessSettings().toObject();
@@ -50,6 +53,17 @@ export async function projectOperations(type, id) {
           recipient: notification.recipient,
           entityType: type,
           entityId: id,
+          reference: notification.reference,
+          eventOutbox: [
+            operationEvent(
+              "notification-created",
+              "Customer email notification queued.",
+              {
+                eventId: `${eventKey}:created`,
+                metadata: { template: notification.template },
+              },
+            ),
+          ],
           payload: renderNotification(
             notification.template,
             notification.reference,
@@ -99,8 +113,10 @@ export async function operationHistory(type, id) {
     NotificationJob.find({ entityType: type, entityId: id })
       .sort({ createdAt: -1, _id: -1 })
       .limit(100)
-      .select("-payload")
       .lean(),
   ]);
-  return { activity, notifications };
+  return {
+    activity,
+    notifications: await notificationSummaries(notifications),
+  };
 }

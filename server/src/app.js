@@ -1,4 +1,5 @@
 import adminStaffRoutes from "./routes/adminStaffRoutes.js";
+import notificationWebhookRoutes from "./routes/notificationWebhookRoutes.js";
 import adminOperationsRoutes from "./routes/adminOperationsRoutes.js";
 import express from "express";
 import cors from "cors";
@@ -26,6 +27,9 @@ import publicSettingsRoutes from "./routes/publicSettingsRoutes.js";
 const app = express();
 
 app.use(helmet());
+// Raw signed bytes must be verified before JSON middleware. This provider-only
+// route has its own limiter, no browser cookie, and returns no customer data.
+app.use("/api/v1/webhooks/resend", notificationWebhookRoutes);
 
 app.use(
   cors({
@@ -49,7 +53,12 @@ app.use(
 app.use(cookieParser());
 
 if (process.env.NODE_ENV === "development") {
-  app.use(morgan("dev"));
+  app.use(
+    morgan(
+      (tokens, req, res) =>
+        `${tokens.method(req, res)} ${req.originalUrl.split("?")[0]} ${tokens.status(req, res)} ${tokens["response-time"](req, res)} ms`,
+    ),
+  );
 }
 
 const apiLimiter = rateLimit({

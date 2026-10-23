@@ -83,12 +83,13 @@ export default function OperationDetails({ type, id }) {
         path={path}
         busy={busy}
         mutate={mutate}
+        refresh={resource.reload}
       />{" "}
     </div>
   );
 }
 
-function Editor({ record, type, path, busy, mutate }) {
+function Editor({ record, type, path, busy, mutate, refresh }) {
   const [status, setStatus] = useState(record.status);
   const [payment, setPayment] = useState(record.paymentStatus || "pending");
   const [staffId, setStaffId] = useState(record.assignedStaff || "");
@@ -348,6 +349,13 @@ function Editor({ record, type, path, busy, mutate }) {
             title="Notification history"
             description="Email updates use the address recorded for each event. Failed attempts remain visible."
           >
+            <button
+              className="ops-button secondary"
+              type="button"
+              onClick={refresh}
+            >
+              Refresh notification status
+            </button>
             <NotificationHistory
               jobs={record.notifications}
               busy={busy}

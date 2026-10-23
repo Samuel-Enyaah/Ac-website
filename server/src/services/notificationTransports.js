@@ -1,15 +1,16 @@
-// Adapters must honor the stable idempotencyKey across timeouts, restarts and
-// manual retries. A provider without durable idempotency needs reconciliation
-// before it can safely implement this interface. Never log provider responses.
-export function configuredTransport() {
+import { createResendTransport } from "./resendTransport.js";
+import { emailConfiguration } from "./emailConfiguration.js";
+import { notificationError } from "./notificationErrors.js";
+export { sanitizedNotificationError } from "./notificationErrors.js";
+
+export function configuredTransport(env = process.env) {
+  const config = emailConfiguration(env);
+  if (config.provider === "resend") return createResendTransport({ env });
   return {
     name: "unconfigured",
     supportsIdempotency: true,
     async send() {
-      throw Object.assign(new Error("No notification provider configured."), {
-        notificationCode: "unconfigured",
-        permanent: true,
-      });
+      throw notificationError(config.failureCode, { permanent: true });
     },
   };
 }
@@ -31,14 +32,4 @@ export function createTestTransport({ fail } = {}) {
       return receipt;
     },
   };
-}
-
-export function sanitizedNotificationError(error) {
-  if (error?.notificationCode === "unconfigured")
-    return "Delivery unavailable: no provider is configured. Use the customer contact links or configure an approved adapter before retrying.";
-  if (error?.notificationCode === "unsupported")
-    return "The transport cannot safely deduplicate deliveries. Provider reconciliation is required.";
-  if (error?.permanent)
-    return "The provider rejected this notification. Review provider configuration and the stored recipient before retrying.";
-  return "Delivery could not be confirmed. A retry with the same event key is scheduled until the attempt limit is reached.";
 }

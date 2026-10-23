@@ -1,3 +1,4 @@
+import { notificationHealth } from "../services/notificationReads.js";
 import ActivityLog from "../models/ActivityLog.js";
 import NotificationJob from "../models/NotificationJob.js";
 import Order from "../models/Order.js";
@@ -136,12 +137,14 @@ export async function getAdminDashboard(req, res, next) {
         .select("-payload")
         .lean(),
     ]);
+    const health = await notificationHealth();
     const paidRevenue = paidRevenueResult[0]?.total || 0;
 
     res.status(200).json({
       success: true,
 
       dashboard: {
+        notificationHealth: health,
         recentActivity,
         notificationFailures,
         stats: {

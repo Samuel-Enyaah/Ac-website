@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { normalizedEmail } from "./emailConfiguration.js";
 
 export const operationalError = (message, statusCode = 409) =>
   Object.assign(new Error(message), { statusCode, expose: true });
@@ -18,6 +19,11 @@ export function operationEvent(
     "previousStaffId",
     "noteId",
     "fields",
+    "notificationId",
+    "template",
+    "provider",
+    "generation",
+    "failureCode",
   ];
   return {
     eventId: eventId || randomUUID(),
@@ -41,7 +47,8 @@ export function customerNotification(
   record,
   status = record.status,
 ) {
-  if (!record.customer?.email) return undefined;
+  const recipient = normalizedEmail(record.customer?.email);
+  if (!recipient) return undefined;
   const statuses =
     entityType === "order"
       ? [
@@ -69,7 +76,7 @@ export function customerNotification(
     return undefined;
   return {
     template: `${entityType}.${status}`,
-    recipient: record.customer.email.toLowerCase(),
+    recipient,
     reference: record.orderNumber || record.bookingNumber,
   };
 }
